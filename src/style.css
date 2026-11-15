@@ -2722,3 +2722,146 @@ fieldset.rating {
   margin-left: auto;
   max-width: 100%;
 }
+
+/* A bounded app viewport: inner photo/table scrolling must never move the document. */
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
+  overscroll-behavior-x: none;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  touch-action: pan-x pan-y;
+}
+#root,
+.app {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+main,
+.content,
+.toolbar,
+.filters,
+.compare-picker,
+.compare-grid,
+.share-form,
+.capture-row,
+.households-page {
+  min-width: 0;
+  max-width: 100%;
+}
+.compare-picker > .chip {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.compare-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.compare-grid > .panel {
+  min-width: 0;
+}
+.share-form > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.share-form .button {
+  white-space: normal;
+}
+.photos,
+.table-scroll {
+  overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y;
+}
+@media (max-width: 900px), (pointer: coarse) {
+  /* 16px prevents Safari from zooming the viewport when any native text control gets focus. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+  input[type="date"],
+  input[type="datetime-local"],
+  input[type="time"] {
+    appearance: none;
+    -webkit-appearance: none;
+    min-width: 0;
+    width: 100%;
+  }
+  input::-webkit-date-and-time-value {
+    text-align: left;
+    min-height: 1.25em;
+  }
+  .entry-form input:not([type="checkbox"]):not([type="radio"]),
+  .entry-form select,
+  .entry-form textarea {
+    max-width: 100%;
+  }
+}
+@media (max-width: 650px) {
+  .content {
+    padding-left: max(18px, env(safe-area-inset-left));
+    padding-right: max(18px, env(safe-area-inset-right));
+  }
+  .topbar {
+    padding-left: max(18px, env(safe-area-inset-left));
+    padding-right: max(18px, env(safe-area-inset-right));
+  }
+  .mobile-nav {
+    padding-left: max(10px, env(safe-area-inset-left));
+    padding-right: max(10px, env(safe-area-inset-right));
+  }
+  .toolbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px;
+  }
+  .toolbar > .search {
+    grid-column: 1/-1;
+    width: 100%;
+    min-width: 0;
+  }
+  .toolbar > select {
+    width: 100%;
+    min-width: 0;
+  }
+  .filters {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .filters > select {
+    width: 100%;
+    min-width: 0;
+  }
+  .compare-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .share-form {
+    width: 100%;
+  }
+  .capture-row > input,
+  .capture-row > select {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+@supports not (overflow: clip) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+}
+@media (display-mode: standalone) {
+  .app {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}

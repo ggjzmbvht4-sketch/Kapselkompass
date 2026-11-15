@@ -150,3 +150,12 @@ npm run test:mobile
 ```
 
 Über `CHROMIUM_PATH` lässt sich der Browserpfad ändern, über `APP_URL` die Serveradresse. Der Check prüft private und gemeinsame Tagebucheinträge, das Bewertungsformular und die Haushaltsverwaltung sowie den realen SDK-Request eines vorgemerkten PNG-Fotos. Die automatische Browserprüfung verwendet Chromium; ein erneuter Upload auf dem betroffenen iPhone bestätigt zusätzlich das Verhalten im echten Safari.
+
+
+## Korrektur v3.0.2: feste mobile Ansicht
+
+Die mobile Oberfläche bleibt auf der vorgesehenen Gerätebreite. Der Viewport begrenzt Touch-Zoom; zusätzlich verhindern nicht-passive WebKit-Gestenhandler und Multitouch-Handler Pinch-Zoom in der Touch-Ansicht. Normales Ein-Finger-Scrollen bleibt erlaubt. Es gibt keine Handler, die Desktop-Tastaturkürzel oder die Vergrößerung durch Betriebssystemfunktionen abfangen.
+
+Alle nativen Textfelder, Auswahllisten und Textbereiche verwenden auf schmalen beziehungsweise Touch-Geräten mindestens 16px Schrift, einschließlich Suche, Filter, Profil, Haushaltsverwaltung und Zubereitungsfilter. Dadurch wird der automatische Safari-Fokuszoom vermieden. Lange Vergleichsfilter umbrechen innerhalb ihrer Schaltflächen; Such- und Filterfelder erhalten eigene begrenzte Grid-Spalten. Der Dokumentbereich kann weder horizontal scrollen noch seitlich überschwingen. Vergleichstabellen und Fotoleisten behalten ihre eigene horizontale Scrollfläche. Die installierte App berücksichtigt sichere Displayränder.
+
+`npm run test:mobile` deckt zusätzlich Startseite, neue Kapseln, Barcode-/Foto-/Shop-Erfassung, Sammlung mit Filtern, ausgewählten Vergleich, Profil und Haushalte ab. Die Prüfung kontrolliert Feldgrößen und -positionen, sichtbare Seitenbreite, horizontale Dokumentverschiebung, die unveränderte Zoomstufe sowie Pinch-Gesten und weiterhin mögliches vertikales beziehungsweise inneres Tabellen-Scrollen. Sie läuft in Chromium; die echte Safari-Ansicht sollte nach dem Update auf dem betroffenen Gerät erneut geprüft werden.

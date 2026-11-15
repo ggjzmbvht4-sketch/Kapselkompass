@@ -195,9 +195,21 @@ try {
       const sizes = await page.evaluate(() => ({
         viewport: innerWidth,
         page: document.documentElement.scrollWidth,
+        scale: window.visualViewport?.scale || 1,
+        fields: [
+          ...document.querySelectorAll(
+            "input:not([type=file]):not([type=checkbox]):not([type=radio]),select,textarea",
+          ),
+        ]
+          .filter((e) => e.getBoundingClientRect().width > 0)
+          .map((e) => ({
+            name: e.getAttribute("aria-label") || e.getAttribute("name"),
+            font: parseFloat(getComputedStyle(e).fontSize),
+            right: Math.round(e.getBoundingClientRect().right),
+          })),
         wide: [
           ...document.querySelectorAll(
-            ".tasting,.notes,.panel,.entry-form,dialog,.household-context,.household-ratings",
+            ".tasting,.notes,.panel,.entry-form,dialog,.household-context,.household-ratings,.compare-picker>.chip,.toolbar,.filters,.share-form,.capture-row,input:not([type=file]),select,textarea",
           ),
         ]
           .filter(
@@ -235,6 +247,19 @@ try {
         );
       if (!probe) {
         assert.ok(
+          sizes.fields.every((f) => width > 650 || f.font >= 16),
+          `${label} contains fields that trigger iPhone focus zoom at ${width}`,
+        );
+        assert.equal(sizes.scale, 1, `${label} starts with a zoomed viewport`);
+        const horizontal = await page.evaluate(() => {
+          const y = scrollY;
+          window.scrollTo(200, y);
+          const x = scrollX;
+          window.scrollTo(0, y);
+          return x;
+        });
+        assert.equal(horizontal, 0, `${label} can move sideways at ${width}`);
+        assert.ok(
           sizes.page <= width + 1,
           `${label} page overflows at ${width}: ${sizes.page}`,
         );
@@ -245,11 +270,65 @@ try {
         );
       }
     };
+    await check("home");
+    await page
+      .getByRole("button", { name: "Kaffee hinzufügen", exact: true })
+      .first()
+      .click();
+    await page.locator("dialog").waitFor();
+    await check("capsule-form");
+    for (const name of ["Barcode", "Shop-Link", "Foto erkennen"]) {
+      await page
+        .locator(".capture-tabs")
+        .getByRole("button", { name, exact: true })
+        .click();
+      await check("capture-" + name);
+    }
+    await page
+      .locator("dialog")
+      .getByRole("button", { name: "Schließen", exact: true })
+      .click();
+    for (const route of ["/sammlung", "/vergleich", "/profil"]) {
+      await page.evaluate((value) => {
+        location.hash = value;
+      }, route);
+      await page.waitForTimeout(150);
+      if (route === "/sammlung") await page.locator(".filter-button").click();
+      if (route === "/vergleich")
+        await page.locator(".compare-picker .chip").first().click();
+      await check(route);
+    }
     await page.evaluate((id) => {
       location.hash = "/kaffee/" + id;
     }, cap);
     await page.locator(".tasting").waitFor();
     await check("private-diary");
+    if (width < 650 && !probe) {
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Input.synthesizePinchGesture", {
+        x: width / 2,
+        y: 300,
+        scaleFactor: 1.6,
+        relativeSpeed: 800,
+        gestureSourceType: "touch",
+      });
+      assert.equal(
+        await page.evaluate(() => visualViewport.scale),
+        1,
+        "Touch pinch must not change app scale",
+      );
+      const vertical = await page.evaluate(() => {
+        window.scrollTo(0, 200);
+        const value = scrollY;
+        window.scrollTo(0, 0);
+        return value;
+      });
+      assert.ok(
+        vertical > 0,
+        "Normal vertical scrolling must remain available",
+      );
+      await cdp.detach();
+    }
     if (width === 390 && !probe) {
       const result = await page.evaluate(
         async ({ uid, cap, bytes }) => {
@@ -310,6 +389,21 @@ try {
     }, sharedCap);
     await page.locator(".household-ratings").waitFor();
     await check("household-diary");
+    if (!probe && width < 650) {
+      const table = await page.locator(".table-scroll").evaluate((e) => {
+        e.scrollLeft = 100;
+        return {
+          scroll: e.scrollLeft,
+          width: e.clientWidth,
+          full: e.scrollWidth,
+        };
+      });
+      assert.ok(
+        table.full <= table.width || table.scroll > 0,
+        "Comparison table must retain independent horizontal scrolling",
+      );
+    }
+
     await page.evaluate(() => {
       location.hash = "/haushalte";
     });

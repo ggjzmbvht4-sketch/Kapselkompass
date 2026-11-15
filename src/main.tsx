@@ -2,6 +2,8 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./style.css";
+import { installViewportGuards } from "./viewport";
+installViewportGuards();
 import { registerSW } from "virtual:pwa-register";
 registerSW({
   onNeedRefresh() {
