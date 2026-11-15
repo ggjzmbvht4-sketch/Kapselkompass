@@ -1,1 +1,32 @@
-{"name":"kapselkompass","version":"1.0.0","private":true,"type":"module","scripts":{"dev":"vite --host 0.0.0.0","build":"tsc -b && vite build","test":"vitest run","preview":"vite preview --host 0.0.0.0"},"dependencies":{"@supabase/supabase-js":"2.110.0","idb":"8.0.3","lucide-react":"0.577.0","react":"19.2.4","react-dom":"19.2.4"},"devDependencies":{"@electric-sql/pglite":"0.3.14","@types/node":"24.10.1","@types/react":"19.2.14","@types/react-dom":"19.2.3","@vitejs/plugin-react":"5.1.4","fake-indexeddb":"6.2.5","typescript":"5.9.3","vite":"7.3.1","vite-plugin-pwa":"1.2.0","vitest":"4.0.18"}}
+{
+  "name": "kapselkompass",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.110.0",
+    "idb": "8.0.3",
+    "lucide-react": "0.577.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.3.14",
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "5.1.4",
+    "fake-indexeddb": "6.2.5",
+    "prettier": "3.8.3",
+    "typescript": "5.9.3",
+    "vite": "7.3.8",
+    "vite-plugin-pwa": "2.0.0",
+    "vitest": "4.1.12"
+  }
+}
