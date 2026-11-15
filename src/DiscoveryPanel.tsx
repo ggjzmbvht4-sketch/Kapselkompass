@@ -7,7 +7,12 @@ import {
   prepareImage,
   type Suggestion,
 } from "./discovery";
-import { normalizeBarcode, type Capsule, type LocalRow } from "./domain";
+import {
+  normalizeBarcode,
+  formatManufacturerIntensity,
+  type Capsule,
+  type LocalRow,
+} from "./domain";
 import { catalogBarcode } from "../supabase/functions/coffee-discover/catalog";
 export default function DiscoveryPanel({
   capsules,
@@ -455,6 +460,9 @@ export default function DiscoveryPanel({
           <p>
             {s.system}
             {s.pack_size ? ` · ${s.pack_size} Kapseln pro Packung` : ""}
+            {s.intensity
+              ? ` · Herstellerintensität ${formatManufacturerIntensity(s)}`
+              : ""}
             {s.confidence
               ? ` · ${s.confidence === "high" ? "Deutlicher Hinweis" : s.confidence === "medium" ? "Möglicher Treffer" : "Unsicherer Vorschlag"}`
               : ""}

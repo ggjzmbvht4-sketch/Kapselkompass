@@ -28,6 +28,8 @@ import {
 import { supabase, configured, redirectUrl } from "./backend";
 import {
   criteria,
+  parseManufacturerIntensity,
+  formatManufacturerIntensity,
   average,
   validateTasting,
   type Capsule,
@@ -39,6 +41,10 @@ import {
 import * as store from "./store";
 import { materializePhotos } from "./photoFiles";
 import { AppUpdateNotice, AppVersion } from "./AppUpdate";
+import {
+  ManufacturerIntensityFields,
+  ManufacturerIntensityComparison,
+} from "./ManufacturerIntensity";
 import DiscoveryPanel from "./DiscoveryPanel";
 import InventoryPanel from "./InventoryPanel";
 import HouseholdPanel from "./HouseholdPanel";
@@ -454,6 +460,7 @@ export default function App() {
           brand: "Nespresso",
           system: "Original",
           intensity: 10,
+          intensity_max: 13,
           price: 0.49,
           favorite: true,
         },
@@ -462,6 +469,7 @@ export default function App() {
           brand: "L’OR",
           system: "Original",
           intensity: 9,
+          intensity_max: 12,
           price: 0.39,
           favorite: false,
         },
@@ -470,6 +478,7 @@ export default function App() {
           brand: "Nespresso",
           system: "Original",
           intensity: 6,
+          intensity_max: 13,
           price: 0.55,
           favorite: false,
         },
@@ -856,6 +865,13 @@ export default function App() {
                 title="Geschmack im Vergleich"
                 text="Bis zu drei Kaffees. Alle Nuancen auf einen Blick."
               />
+              <p className="muted intensity-explanation">
+                Herstellerintensitäten werden zusätzlich im gleichen
+                Zahlenbereich auf /10 umgerechnet. Herstellerskalen sind nicht
+                standardisiert; die Umrechnung ist eine rechnerische
+                Orientierung. Deine Geschmacksbewertungen bleiben eigene
+                1–10-Skalen.
+              </p>
               <div className="compare-picker">
                 {capsules.map((c) => (
                   <button
@@ -887,6 +903,14 @@ export default function App() {
                         <Coffee size={35} />
                         <p className="eyebrow">{asCapsule(c).brand}</p>
                         <h2>{asCapsule(c).name}</h2>
+                        <ManufacturerIntensityComparison
+                          capsule={asCapsule(c)}
+                        />
+                        <h3>
+                          {household
+                            ? "Geschmacksbewertungen im Haushalt"
+                            : "Deine Geschmacksbewertungen"}
+                        </h3>
                         {criteria.map(([key, label]) => (
                           <div className="compare-score" key={key}>
                             <span>{label}</span>
@@ -936,7 +960,7 @@ export default function App() {
                   <h1>{asCapsule(detail).name}</h1>
                   <p className="muted">
                     {asCapsule(detail).intensity &&
-                      `Herstellerintensität ${asCapsule(detail).intensity}`}
+                      `Herstellerintensität ${formatManufacturerIntensity(asCapsule(detail))}`}
                     {asCapsule(detail).price !== undefined &&
                       ` · ${asCapsule(detail).price?.toLocaleString("de-DE", { style: "currency", currency: "EUR" })} je Kapsel`}
                   </p>
@@ -1632,7 +1656,9 @@ function CoffeeCard({
         <h3>{c.name}</h3>
         <div className="card-meta">
           <span>
-            {c.intensity ? "Intensität " + c.intensity : "Deine Entdeckung"}
+            {c.intensity
+              ? "Intensität " + formatManufacturerIntensity(c)
+              : "Deine Entdeckung"}
           </span>
           {c.price !== undefined && (
             <span>
@@ -1731,7 +1757,11 @@ function TastingCard({
       <div className="tasting-scores">
         {criteria.slice(0, 5).map(([k, l]) => (
           <span key={k}>
-            {l} <strong>{t[k]}</strong>
+            {l}{" "}
+            <strong>
+              {t[k]}
+              {k === "intensity" ? "/10" : ""}
+            </strong>
           </span>
         ))}
       </div>
@@ -1834,9 +1864,10 @@ export function EntryForm({
           brand: String(f.get("brand")).trim(),
           system: String(f.get("system")).trim(),
           favorite: c.favorite || false,
-          ...(f.get("intensity")
-            ? { intensity: Number(f.get("intensity")) }
-            : {}),
+          ...parseManufacturerIntensity(
+            String(f.get("intensity") || ""),
+            String(f.get("intensity_max") || ""),
+          ),
           ...(f.get("price") ? { price: Number(f.get("price")) } : {}),
           barcodes: [
             ...new Set(
@@ -1972,16 +2003,7 @@ export function EntryForm({
                   defaultValue={c.pack_size}
                 />
               </label>
-              <label>
-                Herstellerintensität (optional)
-                <input
-                  name="intensity"
-                  type="number"
-                  min="1"
-                  max="20"
-                  defaultValue={c.intensity}
-                />
-              </label>
+              <ManufacturerIntensityFields capsule={c} />
               <label>
                 Preis je Kapsel in € (optional)
                 <input

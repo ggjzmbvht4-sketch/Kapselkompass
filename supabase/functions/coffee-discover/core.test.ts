@@ -44,9 +44,29 @@ describe("Discovery boundary and extraction", () => {
       system: "Original",
       pack_size: 50,
       intensity: 7,
+      intensity_max: 10,
       price: 0.1718,
       barcodes: ["4006381333931"],
     });
+  });
+  it("preserves a shop's non-ten scale and never guesses a missing denominator", () => {
+    const product = (description: string) =>
+      extractShop(
+        html({ "@type": "Product", name: "Kapseln", description }),
+        "https://kaffek.de/test.html",
+      );
+    expect(product("10 Kapseln, Intensität: 9/13")).toMatchObject({
+      intensity: 9,
+      intensity_max: 13,
+    });
+    expect(product("10 Kapseln, Intensität: 9").intensity_max).toBeUndefined();
+    expect(cleanSuggestion({ intensity: 9, intensity_max: 13 })).toMatchObject({
+      intensity: 9,
+      intensity_max: 13,
+    });
+    expect(
+      cleanSuggestion({ intensity: 12, intensity_max: 10 }).intensity_max,
+    ).toBeUndefined();
   });
   it("does not mistake a pack price for a capsule price or infer a missing pack size", () => {
     const result = extractShop(

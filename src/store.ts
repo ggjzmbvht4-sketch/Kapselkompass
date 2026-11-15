@@ -3,6 +3,7 @@ import { supabase, sessionClient } from "./backend";
 import { photoBytes, materializePhotos } from "./photoFiles";
 import { emptyHouseholds, type HouseholdState } from "./households";
 import type { Kind, LocalRow, RecordData, Row } from "./domain";
+import { parseManufacturerIntensity, type Capsule } from "./domain";
 const STORE = "records_scoped";
 const db = openDB("kapselkompass", 2, {
   upgrade(db, oldVersion, _new, tx) {
@@ -89,6 +90,13 @@ export async function save(
 ) {
   if (previous?.conflict)
     throw Error("Bitte zuerst den Änderungskonflikt lösen.");
+  if (kind === "capsules" && (data as Capsule).intensity_max !== undefined) {
+    const c = data as Capsule;
+    parseManufacturerIntensity(
+      c.intensity?.toString() || "",
+      c.intensity_max!.toString(),
+    );
+  }
   const scope = previous ? previous.household_id || null : household;
   if (kind === "capsules" && scope)
     data = { ...data, favorite: false } as RecordData;

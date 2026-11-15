@@ -3,6 +3,7 @@ export type Suggestion = {
   brand?: string;
   system?: string;
   intensity?: number;
+  intensity_max?: number;
   price?: number;
   pack_size?: number;
   barcodes?: string[];
@@ -100,7 +101,12 @@ export function cleanSuggestion(value: unknown): Suggestion {
     const t = text(v[key], key === "explanation" ? 500 : 120);
     if (t) out[key] = t;
   }
-  for (const key of ["intensity", "pack_size", "price"] as const) {
+  for (const key of [
+    "intensity",
+    "intensity_max",
+    "pack_size",
+    "price",
+  ] as const) {
     const n =
       typeof v[key] === "number"
         ? v[key]
@@ -114,10 +120,15 @@ export function cleanSuggestion(value: unknown): Suggestion {
         ? n <= 1000
         : Number.isInteger(n) &&
           n >= 1 &&
-          n <= (key === "intensity" ? 20 : 10000))
+          n <= (key === "pack_size" ? 10000 : 20))
     )
       out[key] = n;
   }
+  if (
+    out.intensity_max !== undefined &&
+    (out.intensity === undefined || out.intensity > out.intensity_max)
+  )
+    delete out.intensity_max;
   if (["high", "medium", "low"].includes(String(v.confidence)))
     out.confidence = v.confidence as Suggestion["confidence"];
   return out;
@@ -189,9 +200,9 @@ export function extractShop(html: string, url: string): Suggestion {
         ? Number(pack[1] || pack[2])
         : undefined;
   const intensity =
-    attrs["Intensität"]?.match(/(\d{1,2})/) ||
+    attrs["Intensität"]?.match(/(\d{1,2})(?:\s*(?:\/|von)\s*(\d{1,2}))?/i) ||
     full.match(
-      /(?:Intensität|Intensitaet|Stärke)\s*[:\-]?\s*(\d{1,2})(?:\s*\/\s*\d+)?/i,
+      /(?:Intensität|Intensitaet|Stärke)\s*[:\-]?\s*(\d{1,2})(?:\s*(?:\/|von)\s*(\d{1,2}))?/i,
     );
   let system: string | undefined;
   if (/Dolce\s*Gusto/i.test(full)) system = "Dolce Gusto";
@@ -234,6 +245,7 @@ export function extractShop(html: string, url: string): Suggestion {
     system,
     pack_size,
     intensity: intensity ? Number(intensity[1]) : undefined,
+    intensity_max: intensity?.[2] ? Number(intensity[2]) : undefined,
     price: unitPrice,
   });
   const barcodes: string[] = [];

@@ -120,6 +120,33 @@ beforeEach(async () => {
   await store.clear("other");
 });
 describe.sequential("Offline-Warteschlange", () => {
+  it("keeps the manufacturer denominator intact across offline storage and cloud sync", async () => {
+    const row = await store.save("test", "capsules", {
+      ...capsule,
+      intensity: 9,
+      intensity_max: 13,
+    });
+    expect((await store.list("test"))[0].data).toMatchObject({
+      intensity: 9,
+      intensity_max: 13,
+    });
+    await store.sync("test");
+    expect(remote.get(row.id).data).toMatchObject({
+      intensity: 9,
+      intensity_max: 13,
+    });
+    expect((await store.list("test"))[0].data).toMatchObject({
+      intensity: 9,
+      intensity_max: 13,
+    });
+    await expect(
+      store.save("test", "capsules", {
+        ...capsule,
+        intensity: 12,
+        intensity_max: 10,
+      }),
+    ).rejects.toThrow("Skalenmaximum");
+  });
   it("persists offline and isolates accounts", async () => {
     Object.defineProperty(globalThis, "navigator", {
       value: { onLine: false },

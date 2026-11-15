@@ -70,6 +70,43 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe("Erfassung und Bestand bedienen", () => {
+  it("saves manufacturer intensity only with its explicit original scale", async () => {
+    const save = vi.fn();
+    const { container } = render(
+      <EntryForm
+        kind="capsules"
+        row={capsule}
+        capsules={[capsule]}
+        rows={[capsule]}
+        demo
+        save={save}
+        onExisting={vi.fn()}
+      />,
+    );
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "Herstellerintensität Wert" }),
+      { target: { value: "9" } },
+    );
+    fireEvent.submit(container.querySelector("form")!);
+    expect(await screen.findByRole("alert")).toHaveProperty(
+      "textContent",
+      expect.stringContaining("Skalenmaximum"),
+    );
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.change(
+      screen.getByRole("spinbutton", {
+        name: "Herstellerintensität Skalenmaximum",
+      }),
+      { target: { value: "13" } },
+    );
+    fireEvent.submit(container.querySelector("form")!);
+    await waitFor(() =>
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({ intensity: 9, intensity_max: 13 }),
+        [],
+      ),
+    );
+  });
   it("recognizes the reported Mövenpick capsule offline without querying a provider", async () => {
     const suggest = vi.fn();
     render(

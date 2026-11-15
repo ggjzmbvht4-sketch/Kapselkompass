@@ -2,6 +2,14 @@
 
 Dein persönliches Kaffeetagebuch als deutschsprachige PWA. React + TypeScript + Vite, Supabase Auth/Postgres/Storage, GitHub Pages.
 
+## Ergänzung v3.0.5: Herstellerintensität als Verhältnis
+
+Eine Herstellerintensität wird bei der manuellen Erfassung und beim Bearbeiten immer zusammen mit dem aufgedruckten Skalenmaximum gespeichert, zum Beispiel `7/10` oder `9/13`. Beide Zahlen bleiben als `data.intensity` und `data.intensity_max` im bestehenden Supabase-JSON-Datensatz erhalten; Offline-Cache, Synchronisierung, Freigaben und Haushaltsübernahmen übernehmen das Verhältnis unverändert. Es ist keine Schemaänderung oder Umschreibung vorhandener Einträge erforderlich. Wert und Maximum müssen ganze Zahlen von 1 bis 20 sein und der Wert darf das Maximum nicht übersteigen. Beide Felder dürfen gemeinsam leer bleiben.
+
+Sammlung, Detailansicht und Importvorschläge zeigen die Originalangabe. Das Erfassungsformular und der Vergleich rechnen zusätzlich proportional auf 10 um: `Wert / Maximum × 10`, beispielsweise `9/13 → 6,9/10`. Hersteller definieren ihre Intensitätsskalen unterschiedlich; diese Umrechnung vereinheitlicht nur den Zahlenbereich und stellt keine sensorische Kalibrierung dar. Persönliche Geschmacksbewertungen bleiben davon getrennt auf ihrer festen 1–10-Skala. Auch die Intensität im Tagebucheintrag zeigt ausdrücklich `/10`.
+
+Alte Einträge ohne gespeichertes Maximum erscheinen mit „Skala fehlt“ und werden nicht rechnerisch verglichen. Beim Bearbeiten muss die fehlende Skala von der Packung ergänzt oder die optionale Herstellerangabe entfernt werden. Es wird keine automatische `/10`-Annahme vorgenommen. Shopimporte erhalten vorhandene Angaben wie `9/13`; die Bilderkennung darf ein Maximum nur übernehmen, wenn es ausdrücklich sichtbar ist. Fehlt die Skala in der Quelle, bleibt sie bis zur manuellen Ergänzung offen.
+
 ## Korrektur v3.0.4: Barcode-Suche mit zusätzlichen Quellen
 
 Die Suche prüft zuerst die eigene Sammlung und danach einen kleinen, mitgelieferten Kapselkatalog. Dieser enthält vier anhand der Hersteller-Verkaufsunterlagen geprüfte Mövenpick-Verbraucherpackungen: Crema Lungo (4006581061030), Classico Lungo (4006581061047), Der Himmlische Lungo (4006581061054) und Gusto Italiano Lungo (4006581061078), jeweils 10 Kapseln für Original. Versandkarton-EANs werden nicht als 10er-Packungen erkannt. Der Katalog ist auch offline verfügbar; die Produktangaben bleiben vor dem Speichern prüfbar. Preise und Intensität werden nicht aus widersprüchlichen älteren Produktangaben geschätzt.

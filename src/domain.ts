@@ -12,6 +12,7 @@ export type Capsule = {
   brand: string;
   system: string;
   intensity?: number;
+  intensity_max?: number;
   price?: number;
   favorite: boolean;
   barcodes?: string[];
@@ -29,6 +30,53 @@ export type Tasting = Scores & {
   tags: string[];
   rebuy: "yes" | "no" | "maybe";
 };
+export function parseManufacturerIntensity(
+  value: string,
+  maximum: string,
+): Pick<Capsule, "intensity" | "intensity_max"> {
+  if (!value.trim() && !maximum.trim()) return {};
+  if (!value.trim() || !maximum.trim())
+    throw Error(
+      "Bitte Herstellerintensität und Skalenmaximum gemeinsam angeben, zum Beispiel 7/10 oder 9/13.",
+    );
+  const intensity = Number(value),
+    intensity_max = Number(maximum);
+  if (
+    ![intensity, intensity_max].every(
+      (n) => Number.isInteger(n) && n >= 1 && n <= 20,
+    )
+  )
+    throw Error(
+      "Herstellerintensität und Skalenmaximum müssen ganze Zahlen von 1 bis 20 sein.",
+    );
+  if (intensity > intensity_max)
+    throw Error(
+      "Die Herstellerintensität darf nicht größer als das Skalenmaximum sein.",
+    );
+  return { intensity, intensity_max };
+}
+export function normalizedManufacturerIntensity(
+  c: Pick<Capsule, "intensity" | "intensity_max">,
+): number | null {
+  if (c.intensity === undefined || c.intensity_max === undefined) return null;
+  try {
+    const { intensity, intensity_max } = parseManufacturerIntensity(
+      String(c.intensity),
+      String(c.intensity_max),
+    );
+    return (intensity! / intensity_max!) * 10;
+  } catch {
+    return null;
+  }
+}
+export function formatManufacturerIntensity(
+  c: Pick<Capsule, "intensity" | "intensity_max">,
+): string {
+  if (c.intensity === undefined) return "Nicht angegeben";
+  return normalizedManufacturerIntensity(c) === null
+    ? `${c.intensity} (Skala fehlt)`
+    : `${c.intensity}/${c.intensity_max}`;
+}
 export type Photo = { parent_id: string; path: string; caption: string };
 export type Inventory = {
   capsule_id: string;

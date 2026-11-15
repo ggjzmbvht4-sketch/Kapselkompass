@@ -23,6 +23,8 @@ const coffee = {
   name: long,
   brand: "Eine sehr lange Kaffeemarke zum Testen schmaler Geräte",
   system: "Original",
+  intensity: 9,
+  intensity_max: 13,
   favorite: false,
 };
 const review = {
@@ -277,6 +279,25 @@ try {
       .click();
     await page.locator("dialog").waitFor();
     await check("capsule-form");
+    await page
+      .getByRole("spinbutton", {
+        name: "Herstellerintensität Wert",
+        exact: true,
+      })
+      .fill("9");
+    await page
+      .getByRole("spinbutton", {
+        name: "Herstellerintensität Skalenmaximum",
+        exact: true,
+      })
+      .fill("13");
+    assert.ok(
+      (await page.locator(".intensity-normalized").innerText()).includes(
+        "6,9/10",
+      ),
+    );
+    await check("intensity-form");
+
     for (const name of ["Barcode", "Shop-Link", "Foto erkennen"]) {
       await page
         .locator(".capture-tabs")
@@ -325,8 +346,18 @@ try {
       }, route);
       await page.waitForTimeout(150);
       if (route === "/sammlung") await page.locator(".filter-button").click();
-      if (route === "/vergleich")
+      if (route === "/vergleich") {
         await page.locator(".compare-picker .chip").first().click();
+        assert.equal(
+          await page.locator(".manufacturer-comparison > strong").innerText(),
+          "6,9 /10 rechnerisch",
+        );
+        assert.ok(
+          (await page.locator(".manufacturer-comparison").innerText()).includes(
+            "9/13",
+          ),
+        );
+      }
       await check(route);
     }
     await page.evaluate((id) => {

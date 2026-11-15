@@ -736,3 +736,23 @@ describe.sequential("Haushalte, Autorenrechte und sichere Übernahme", () => {
     expect(await count("coffee_capsules")).toBe(before);
   });
 });
+
+describe.sequential("Herstellerintensität mit Originalskala", () => {
+  it("persists both numbers through the existing Supabase JSON record API", async () => {
+    await as(a);
+    const key = id();
+    await scopedSave(
+      "capsules",
+      key,
+      { ...capsule, intensity: 9, intensity_max: 13 },
+      null,
+    );
+    const result = await db.query<{
+      data: { intensity: number; intensity_max: number };
+    }>("select data from public.coffee_capsules where id=$1", [key]);
+    expect(result.rows[0].data).toMatchObject({
+      intensity: 9,
+      intensity_max: 13,
+    });
+  });
+});
