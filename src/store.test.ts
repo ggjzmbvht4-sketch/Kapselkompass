@@ -47,6 +47,19 @@ vi.mock("./backend", () => ({
               ),
               error: null,
             }).then(f),
+          order: () => ({
+            range: async (start: number, end: number) => ({
+              data: [...remote.values()]
+                .filter(
+                  (r) =>
+                    r.kind === table.replace("coffee_", "") &&
+                    r.user_id === value,
+                )
+                .sort((a, b) => a.id.localeCompare(b.id))
+                .slice(start, end + 1),
+              error: null,
+            }),
+          }),
           single: async () => ({ data: remote.get(value), error: null }),
         }),
       }),

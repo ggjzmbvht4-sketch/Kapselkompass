@@ -36,6 +36,10 @@ import {
   type Photo,
 } from "./domain";
 import * as store from "./store";
+import DiscoveryPanel from "./DiscoveryPanel";
+import InventoryPanel from "./InventoryPanel";
+import { stock, normalizeBarcode, type Inventory } from "./domain";
+import { ownBarcode, type Suggestion } from "./discovery";
 const DEMO = "demo-local";
 const today = () => {
   const d = new Date();
@@ -303,7 +307,10 @@ export default function App() {
             ? rated
             : status === "unrated"
               ? !rated
-              : c.favorite))
+              : status === "low"
+                ? stock(rows, r.id).amount !== null &&
+                  stock(rows, r.id).amount! <= stock(rows, r.id).threshold
+                : c.favorite))
       );
     })
     .sort((a, b) =>
@@ -591,6 +598,29 @@ export default function App() {
               </Button>
             </div>
           )}
+          {errors
+            .filter((r) => r.kind === "inventory" && r.baseVersion === 0)
+            .map((r) => (
+              <div className="notice" key={"discard-" + r.id}>
+                <span>
+                  Bestandsbuchung nicht bestätigt:{" "}
+                  {(r.data as Inventory).note || r.error}
+                </span>
+                <Button
+                  secondary
+                  onClick={() => {
+                    if (
+                      confirm(
+                        "Diese lokale Buchung verwerfen? Falls sie bereits am Server angekommen ist, wird sie bei der nächsten Synchronisierung wieder angezeigt.",
+                      )
+                    )
+                      void store.discardPending(r).then(synchronize);
+                  }}
+                >
+                  Lokale Buchung verwerfen
+                </Button>
+              </div>
+            ))}
           {!ready ? (
             <p>Dein Kaffeetagebuch lädt …</p>
           ) : route === "/profil" ? (
@@ -734,6 +764,41 @@ export default function App() {
               <Photos
                 rows={photos(detail.id)}
                 onDelete={(r) => void store.remove(r).then(synchronize)}
+              />
+              {asCapsule(detail).shop_url && (
+                <a
+                  className="button secondary shop-link"
+                  href={asCapsule(detail).shop_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Im Shop nachkaufen <ArrowUpRight size={16} />
+                </a>
+              )}
+              {asCapsule(detail).source && (
+                <p className="muted source-note">
+                  Produktdaten:{" "}
+                  <a
+                    href={asCapsule(detail).source!.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {asCapsule(detail).source!.name}
+                  </a>{" "}
+                  · Stand{" "}
+                  {new Date(
+                    asCapsule(detail).source!.imported_at,
+                  ).toLocaleDateString("de-DE")}
+                </p>
+              )}
+              <InventoryPanel
+                key={detail.id}
+                capsule={detail}
+                rows={rows}
+                onSave={async (movement) => {
+                  await store.save(uid, "inventory", movement);
+                  void synchronize();
+                }}
               />
               <div className="profile-scores">
                 {criteria.map(([k, l]) => (
@@ -988,6 +1053,7 @@ export default function App() {
                     <option value="rated">Bewertet</option>
                     <option value="unrated">Noch unprobiert</option>
                     <option value="favorite">Favoriten</option>
+                    <option value="low">Nachkaufen</option>
                   </select>
                 </div>
               )}
@@ -998,6 +1064,7 @@ export default function App() {
                     <CoffeeCard
                       key={r.id}
                       row={r}
+                      inventory={stock(rows, r.id)}
                       score={average(rows, r.id)}
                       count={tastingList(r.id).length}
                       photos={photos(r.id)}
@@ -1089,7 +1156,48 @@ export default function App() {
             row={modal.row}
             capsule={modal.capsule}
             capsules={capsules}
+            rows={rows}
+            demo={demo}
+            onExisting={async (id, code) => {
+              const existing = capsules.find((r) => r.id === id);
+              if (!existing) throw Error("Sorte nicht mehr verfügbar.");
+              if (code) {
+                const duplicate = ownBarcode(capsules, code);
+                if (duplicate && duplicate.id !== id)
+                  throw Error(
+                    "Dieser Barcode ist bereits einer anderen Sorte zugeordnet.",
+                  );
+                await store.save(
+                  uid,
+                  "capsules",
+                  {
+                    ...asCapsule(existing),
+                    barcodes: [
+                      ...new Set([
+                        ...(asCapsule(existing).barcodes || []),
+                        code,
+                      ]),
+                    ],
+                  },
+                  existing,
+                );
+                void synchronize();
+              }
+              setModal(null);
+              navigate("/kaffee/" + id);
+            }}
             save={async (data, files) => {
+              if (modal.kind === "capsules") {
+                for (const code of (data as Capsule).barcodes || []) {
+                  const own = ownBarcode(capsules, code);
+                  if (own && own.id !== modal.row?.id)
+                    throw Error(
+                      "Dieser Barcode gehört bereits zu " +
+                        asCapsule(own).name +
+                        ". Bitte die vorhandene Sorte öffnen.",
+                    );
+                }
+              }
               const row = await store.save(uid, modal.kind, data, modal.row);
               await store.addPhotos(uid, row.id, files);
               setModal(null);
@@ -1176,6 +1284,7 @@ function Empty({
 }
 function CoffeeCard({
   row,
+  inventory,
   score,
   count,
   photos,
@@ -1183,6 +1292,7 @@ function CoffeeCard({
   open,
 }: {
   row: LocalRow;
+  inventory?: ReturnType<typeof stock>;
   score: number | null;
   count: number;
   photos: LocalRow[];
@@ -1226,6 +1336,20 @@ function CoffeeCard({
             </span>
           )}
         </div>
+        {inventory && (
+          <p
+            className={
+              inventory.amount !== null &&
+              inventory.amount <= inventory.threshold
+                ? "card-stock low"
+                : "card-stock"
+            }
+          >
+            {inventory.amount === null
+              ? "Bestand nicht erfasst"
+              : `${inventory.amount} Kapseln${inventory.amount < 0 ? " · Bestand prüfen" : inventory.amount <= inventory.threshold ? " · Nachkaufen" : ""}${inventory.pending ? " · vorläufig" : ""}`}
+          </p>
+        )}
         <div className="card-bottom">
           <span className={score === null ? "unrated" : "score"}>
             {score === null ? (
@@ -1300,6 +1424,9 @@ function TastingCard({
           {t.rebuy === "yes" ? "Ja" : t.rebuy === "no" ? "Nein" : "Unsicher"}
         </span>
       </div>
+      {!shared && t.consumed !== undefined && (
+        <p className="muted">Bestandsverbrauch: {t.consumed} Kapsel(n)</p>
+      )}
       <Photos rows={photos} shared={shared} />
       {!shared && (
         <div className="tasting-actions">
@@ -1315,14 +1442,20 @@ function TastingCard({
     </article>
   );
 }
-function EntryForm({
+export function EntryForm({
   kind,
   row,
   capsule,
   capsules,
+  rows,
+  demo,
+  onExisting,
   save,
 }: {
   kind: Kind;
+  rows: LocalRow[];
+  demo: boolean;
+  onExisting: (id: string, barcode?: string) => Promise<void>;
   row?: LocalRow;
   capsule?: string;
   capsules: LocalRow[];
@@ -1338,8 +1471,21 @@ function EntryForm({
           )
         : {},
     );
-  const c = (row?.data || {}) as Partial<Capsule>,
+  const [draft, setDraft] = useState<Partial<Capsule>>({}),
+    [draftKey, setDraftKey] = useState(0),
+    [chosenCapsule, setChosenCapsule] = useState(
+      (row?.data as Partial<Tasting>)?.capsule_id || capsule || "",
+    ),
+    [consumption, setConsumption] = useState(
+      row && kind === "tastings" && (row.data as Tasting).consumed !== undefined
+        ? (row.data as Tasting).consumed! > 0
+          ? "yes"
+          : "no"
+        : "",
+    );
+  const c = (row?.data || draft) as Partial<Capsule>,
     t = (row?.data || {}) as Partial<Tasting>;
+  const hasStock = stock(rows, chosenCapsule).amount !== null;
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -1367,7 +1513,25 @@ function EntryForm({
             ? { intensity: Number(f.get("intensity")) }
             : {}),
           ...(f.get("price") ? { price: Number(f.get("price")) } : {}),
+          barcodes: [
+            ...new Set(
+              String(f.get("barcodes") || "")
+                .split(/[,;\n]/)
+                .map((v) => v.trim())
+                .filter(Boolean)
+                .map(normalizeBarcode),
+            ),
+          ],
+          ...(f.get("pack_size")
+            ? { pack_size: Number(f.get("pack_size")) }
+            : {}),
+          ...(f.get("shop_url")
+            ? { shop_url: new URL(String(f.get("shop_url"))).href }
+            : {}),
+          ...(c.source ? { source: c.source } : {}),
         };
+        if (data.shop_url && !data.shop_url.startsWith("https://"))
+          throw Error("Kauflinks müssen mit https:// beginnen.");
         if (!data.name || !data.brand || !data.system)
           throw Error("Bitte Name, Marke und System ausfüllen.");
       } else {
@@ -1383,7 +1547,16 @@ function EntryForm({
             .map((s) => s.trim())
             .filter(Boolean),
           rebuy: String(f.get("rebuy")),
+          consumed: consumption === "yes" ? Number(f.get("consumed")) : 0,
         } as Tasting;
+        if (!consumption)
+          throw Error(
+            "Bitte ausdrücklich wählen, ob Kapseln vom Bestand abgebucht werden sollen.",
+          );
+        if (consumption === "yes" && !hasStock)
+          throw Error(
+            "Bitte zuerst den Anfangsbestand für diese Sorte erfassen.",
+          );
         if (!validateTasting(data))
           throw Error("Bitte alle sechs Skalen bewusst von 1 bis 10 bewerten.");
       }
@@ -1395,234 +1568,329 @@ function EntryForm({
     }
   }
   return (
-    <form onSubmit={submit} className="entry-form">
-      {kind === "capsules" ? (
-        <>
-          <p className="muted">
-            Eine Sorte, viele Eindrücke. Lege zuerst deinen Kaffee an.
-          </p>
-          <label>
-            Name der Sorte
-            <input
-              name="name"
-              required
-              maxLength={120}
-              defaultValue={c.name}
-              placeholder="z. B. Ristretto Italiano"
-            />
-          </label>
-          <div className="form-grid">
+    <>
+      {kind === "capsules" && !row && (
+        <DiscoveryPanel
+          capsules={capsules}
+          demo={demo}
+          onExisting={onExisting}
+          onSuggest={(value: Suggestion) => {
+            setDraft({ ...draft, ...value });
+            setDraftKey((n) => n + 1);
+          }}
+        />
+      )}
+      <form key={draftKey} onSubmit={submit} className="entry-form">
+        {kind === "capsules" ? (
+          <>
+            <p className="muted">
+              Eine Sorte, viele Eindrücke. Lege zuerst deinen Kaffee an.
+            </p>
             <label>
-              Marke
+              Name der Sorte
               <input
-                name="brand"
+                name="name"
                 required
-                maxLength={80}
-                defaultValue={c.brand}
-                placeholder="z. B. Nespresso"
+                maxLength={120}
+                defaultValue={c.name}
+                placeholder="z. B. Ristretto Italiano"
               />
             </label>
+            <div className="form-grid">
+              <label>
+                Marke
+                <input
+                  name="brand"
+                  required
+                  maxLength={80}
+                  defaultValue={c.brand}
+                  placeholder="z. B. Nespresso"
+                />
+              </label>
+              <label>
+                Kapselsystem
+                <input
+                  name="system"
+                  list="systems"
+                  required
+                  maxLength={80}
+                  defaultValue={c.system || "Original"}
+                />
+                <datalist id="systems">
+                  {[
+                    "Original",
+                    "Vertuo",
+                    "Dolce Gusto",
+                    "Tassimo",
+                    "Cafissimo",
+                  ].map((v) => (
+                    <option key={v}>{v}</option>
+                  ))}
+                </datalist>
+              </label>
+              <label>
+                Barcodes (mit Komma getrennt)
+                <input
+                  name="barcodes"
+                  defaultValue={c.barcodes?.join(", ")}
+                  placeholder="EAN / UPC"
+                />
+              </label>
+              <label>
+                Kapseln je Packung (optional)
+                <input
+                  name="pack_size"
+                  type="number"
+                  min="1"
+                  max="10000"
+                  step="1"
+                  defaultValue={c.pack_size}
+                />
+              </label>
+              <label>
+                Herstellerintensität (optional)
+                <input
+                  name="intensity"
+                  type="number"
+                  min="1"
+                  max="20"
+                  defaultValue={c.intensity}
+                />
+              </label>
+              <label>
+                Preis je Kapsel in € (optional)
+                <input
+                  name="price"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  defaultValue={c.price}
+                />
+              </label>
+            </div>
             <label>
-              Kapselsystem
+              Kauflink (optional)
               <input
-                name="system"
-                list="systems"
-                required
-                maxLength={80}
-                defaultValue={c.system || "Original"}
-              />
-              <datalist id="systems">
-                {[
-                  "Original",
-                  "Vertuo",
-                  "Dolce Gusto",
-                  "Tassimo",
-                  "Cafissimo",
-                ].map((v) => (
-                  <option key={v}>{v}</option>
-                ))}
-              </datalist>
-            </label>
-            <label>
-              Herstellerintensität (optional)
-              <input
-                name="intensity"
-                type="number"
-                min="1"
-                max="20"
-                defaultValue={c.intensity}
+                name="shop_url"
+                type="url"
+                defaultValue={c.shop_url}
+                placeholder="https://…"
               />
             </label>
+            {c.source && (
+              <p className="muted">
+                Quelle:{" "}
+                <a
+                  href={c.source.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {c.source.name}
+                </a>{" "}
+                · Bitte Angaben vor dem Speichern prüfen.
+              </p>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="form-grid">
+              <label>
+                Kaffeesorte
+                <select
+                  name="capsule_id"
+                  onChange={(e) => {
+                    setChosenCapsule(e.target.value);
+                    setConsumption("");
+                  }}
+                  required
+                  defaultValue={t.capsule_id || capsule || ""}
+                >
+                  <option value="" disabled>
+                    Sorte auswählen
+                  </option>
+                  {capsules.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {asCapsule(c).brand} · {asCapsule(c).name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Zeitpunkt
+                <input
+                  name="date"
+                  type="datetime-local"
+                  required
+                  defaultValue={
+                    t.date
+                      ? new Date(
+                          new Date(t.date).getTime() -
+                            new Date(t.date).getTimezoneOffset() * 60000,
+                        )
+                          .toISOString()
+                          .slice(0, 16)
+                      : today()
+                  }
+                />
+              </label>
+              <label>
+                Zubereitung
+                <select name="method" defaultValue={t.method || "Espresso"}>
+                  {[
+                    "Espresso",
+                    "Ristretto",
+                    "Lungo",
+                    "Americano",
+                    "Mit Milch",
+                    "Cappuccino",
+                    "Latte Macchiato",
+                    "Andere",
+                  ].map((m) => (
+                    <option key={m}>{m}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Wassermenge in ml (optional)
+                <input
+                  name="water"
+                  type="number"
+                  min="1"
+                  max="2000"
+                  defaultValue={t.water}
+                />
+              </label>
+            </div>
             <label>
-              Preis je Kapsel in € (optional)
-              <input
-                name="price"
-                type="number"
-                step="0.01"
-                min="0"
-                defaultValue={c.price}
-              />
-            </label>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="form-grid">
-            <label>
-              Kaffeesorte
+              Kapseln vom Bestand abbuchen?
               <select
-                name="capsule_id"
+                aria-label="Verbrauch bestätigen"
                 required
-                defaultValue={t.capsule_id || capsule || ""}
+                value={consumption}
+                onChange={(e) => setConsumption(e.target.value)}
               >
                 <option value="" disabled>
-                  Sorte auswählen
+                  Bitte ausdrücklich auswählen
                 </option>
-                {capsules.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {asCapsule(c).brand} · {asCapsule(c).name}
-                  </option>
-                ))}
+                <option value="no">Keinen Verbrauch buchen</option>
+                <option value="yes" disabled={!hasStock}>
+                  Ja, Verbrauch buchen
+                </option>
               </select>
             </label>
+            {!hasStock && (
+              <p className="muted">
+                Für diese Sorte ist noch kein Anfangsbestand erfasst. Du kannst
+                die Verkostung ohne Verbrauchsbuchung speichern.
+              </p>
+            )}
+            {consumption === "yes" && (
+              <label>
+                Verbrauchte Kapseln
+                <input
+                  name="consumed"
+                  type="number"
+                  step="1"
+                  min="1"
+                  max="1000"
+                  required
+                  defaultValue={t.consumed || 1}
+                />
+              </label>
+            )}
+            <h3>Dein Geschmacksprofil</h3>
+            <p className="muted">
+              Die ersten fünf Skalen beschreiben den Kaffee. Die Gesamtnote
+              beschreibt, wie gut er dir gefällt.
+            </p>
+            {criteria.map(([k, label, left, right]) => (
+              <fieldset className="rating" key={k}>
+                <legend>
+                  {label}{" "}
+                  <strong>
+                    {scores[k] ?? "—"}
+                    <small> / 10</small>
+                  </strong>
+                </legend>
+                <div className="rating-buttons">
+                  {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                    <button
+                      type="button"
+                      key={n}
+                      aria-label={`${label}: ${n} von 10`}
+                      aria-pressed={scores[k] === n}
+                      className={scores[k] === n ? "chosen" : ""}
+                      onClick={() => setScores({ ...scores, [k]: n })}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+                <div className="scale-ends">
+                  <span>{left}</span>
+                  <span>{right}</span>
+                </div>
+              </fieldset>
+            ))}
             <label>
-              Zeitpunkt
+              Geschmacksnoten, mit Komma getrennt
               <input
-                name="date"
-                type="datetime-local"
-                required
-                defaultValue={
-                  t.date
-                    ? new Date(
-                        new Date(t.date).getTime() -
-                          new Date(t.date).getTimezoneOffset() * 60000,
-                      )
-                        .toISOString()
-                        .slice(0, 16)
-                    : today()
-                }
+                name="tags"
+                defaultValue={t.tags?.join(", ")}
+                placeholder="Schokolade, Nuss, fruchtig …"
               />
             </label>
             <label>
-              Zubereitung
-              <select name="method" defaultValue={t.method || "Espresso"}>
-                {[
-                  "Espresso",
-                  "Ristretto",
-                  "Lungo",
-                  "Americano",
-                  "Mit Milch",
-                  "Cappuccino",
-                  "Latte Macchiato",
-                  "Andere",
-                ].map((m) => (
-                  <option key={m}>{m}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Wassermenge in ml (optional)
-              <input
-                name="water"
-                type="number"
-                min="1"
-                max="2000"
-                defaultValue={t.water}
+              Deine Notizen
+              <textarea
+                name="notes"
+                rows={3}
+                maxLength={5000}
+                defaultValue={t.notes}
+                placeholder="Was bleibt dir von dieser Tasse in Erinnerung?"
               />
             </label>
-          </div>
-          <h3>Dein Geschmacksprofil</h3>
-          <p className="muted">
-            Die ersten fünf Skalen beschreiben den Kaffee. Die Gesamtnote
-            beschreibt, wie gut er dir gefällt.
+            <label>
+              Würdest du ihn wieder kaufen?
+              <select name="rebuy" defaultValue={t.rebuy || "maybe"}>
+                <option value="maybe">Noch unsicher</option>
+                <option value="yes">Ja</option>
+                <option value="no">Nein</option>
+              </select>
+            </label>
+          </>
+        )}
+        <label className="upload">
+          <Camera size={24} />
+          <strong>Fotos hinzufügen</strong>
+          <span>Kamera oder Galerie · JPEG, PNG, WebP · bis 10 MB je Foto</span>
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            multiple
+            onChange={(e) => setFiles(Array.from(e.target.files || []))}
+          />
+        </label>
+        {files.length > 0 && <p>{files.length} Foto(s) ausgewählt</p>}
+        {err && (
+          <p role="alert" className="error">
+            {err}
           </p>
-          {criteria.map(([k, label, left, right]) => (
-            <fieldset className="rating" key={k}>
-              <legend>
-                {label}{" "}
-                <strong>
-                  {scores[k] ?? "—"}
-                  <small> / 10</small>
-                </strong>
-              </legend>
-              <div className="rating-buttons">
-                {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                  <button
-                    type="button"
-                    key={n}
-                    aria-label={`${label}: ${n} von 10`}
-                    aria-pressed={scores[k] === n}
-                    className={scores[k] === n ? "chosen" : ""}
-                    onClick={() => setScores({ ...scores, [k]: n })}
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
-              <div className="scale-ends">
-                <span>{left}</span>
-                <span>{right}</span>
-              </div>
-            </fieldset>
-          ))}
-          <label>
-            Geschmacksnoten, mit Komma getrennt
-            <input
-              name="tags"
-              defaultValue={t.tags?.join(", ")}
-              placeholder="Schokolade, Nuss, fruchtig …"
-            />
-          </label>
-          <label>
-            Deine Notizen
-            <textarea
-              name="notes"
-              rows={3}
-              maxLength={5000}
-              defaultValue={t.notes}
-              placeholder="Was bleibt dir von dieser Tasse in Erinnerung?"
-            />
-          </label>
-          <label>
-            Würdest du ihn wieder kaufen?
-            <select name="rebuy" defaultValue={t.rebuy || "maybe"}>
-              <option value="maybe">Noch unsicher</option>
-              <option value="yes">Ja</option>
-              <option value="no">Nein</option>
-            </select>
-          </label>
-        </>
-      )}
-      <label className="upload">
-        <Camera size={24} />
-        <strong>Fotos hinzufügen</strong>
-        <span>Kamera oder Galerie · JPEG, PNG, WebP · bis 10 MB je Foto</span>
-        <input
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          multiple
-          onChange={(e) => setFiles(Array.from(e.target.files || []))}
-        />
-      </label>
-      {files.length > 0 && <p>{files.length} Foto(s) ausgewählt</p>}
-      {err && (
-        <p role="alert" className="error">
-          {err}
-        </p>
-      )}
-      <Button
-        type="submit"
-        disabled={busy || (kind === "tastings" && !capsules.length)}
-      >
-        <Check size={17} />
-        {busy ? "Wird gespeichert …" : "In meinem Tagebuch speichern"}
-      </Button>
-      {kind === "tastings" && !capsules.length && (
-        <p className="error">
-          Lege zuerst eine Kaffeesorte in deiner Sammlung an.
-        </p>
-      )}
-    </form>
+        )}
+        <Button
+          type="submit"
+          disabled={busy || (kind === "tastings" && !capsules.length)}
+        >
+          <Check size={17} />
+          {busy ? "Wird gespeichert …" : "In meinem Tagebuch speichern"}
+        </Button>
+        {kind === "tastings" && !capsules.length && (
+          <p className="error">
+            Lege zuerst eine Kaffeesorte in deiner Sammlung an.
+          </p>
+        )}
+      </form>
+    </>
   );
 }
 function Auth({ recovery, done }: { recovery: boolean; done: () => void }) {
@@ -1962,11 +2230,13 @@ function Shared({
             .eq("id", owner)
             .maybeSingle(),
           ...(["capsules", "tastings", "photos"] as Kind[]).map((k) =>
-            supabase!
-              .from("coffee_" + k)
-              .select("*")
-              .eq("user_id", owner)
-              .eq("deleted", false),
+            k === "tastings"
+              ? supabase!.rpc("coffee_shared_tastings", { p_owner: owner })
+              : supabase!
+                  .from("coffee_" + k)
+                  .select("*")
+                  .eq("user_id", owner)
+                  .eq("deleted", false),
           ),
         ]);
         for (const r of [p, ...results]) if (r.error) throw r.error;

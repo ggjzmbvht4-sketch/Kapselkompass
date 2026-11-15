@@ -5,6 +5,10 @@ Dein persönliches Kaffeetagebuch als deutschsprachige PWA. React + TypeScript +
 ## Funktionen
 
 - Private Sammlung mit Fotos, Marken, Kapselsystemen, Favoriten und Suche
+- EAN-/UPC-Erkennung per Kamera, Barcodefoto oder Zifferneingabe; eigene Zuordnungen offline und externe Suche über Open Food Facts
+- Fotoerkennung von Verpackungen und beschrifteten losen Kapseln über OpenRouter, immer mit Prüfung vor Übernahme
+- Produktimporte von Nespresso Deutschland und KaffeK; Kauflink und Preisstand bleiben erhalten
+- Privater Kapselbestand mit Anfangsbestand, Packungseinkäufen, Verbrauch, Korrekturen und einstellbarer Nachkaufwarnung
 - Beliebig viele Verkostungen pro Sorte: sechs getrennte Skalen von 1–10, Zubereitung, Datum, Geschmackstags, Notizen und Wiederkaufentscheidung
 - Durchschnittswerte und Vergleich von bis zu drei Sorten
 - Eigene Daten offline lesen, neue Einträge und Fotos vormerken, beim Öffnen oder Wiederverbinden synchronisieren
@@ -35,7 +39,7 @@ Die Datenbanktests führen das echte Schema in isoliertem WASM-Postgres (PGlite)
 ## Supabase einrichten
 
 1. Eigenes EU-Projekt anlegen. Bei Erreichen des Free-Projektlimits muss zunächst ein Platz frei sein oder der Tarif angepasst werden.
-2. `supabase/schema.sql` einmal im SQL Editor des neuen Projekts ausführen. Das Schema verwendet ausschließlich `coffee_*`-Tabellen, ein internes `coffee_private`-Schema und den privaten Bucket `coffee-photos`.
+2. `supabase/schema.sql`, danach `supabase/extension.sql` jeweils einmal im SQL Editor des neuen Projekts ausführen. Das Schema verwendet ausschließlich `coffee_*`-Tabellen, ein internes `coffee_private`-Schema und den privaten Bucket `coffee-photos`.
 3. Auth → URL Configuration: Site URL `https://ggjzmbvht4-sketch.github.io/Kapselkompass/`; dieselbe URL und für die Entwicklung `http://localhost:5173/Kapselkompass/` als erlaubte Redirects eintragen. E-Mail-Bestätigung aktiv lassen.
 4. Für echte Nutzer einen eigenen SMTP-Anbieter in Supabase konfigurieren. Der integrierte Testversand ist beschränkt und kann externe Empfänger ablehnen.
 5. Die öffentlichen Projektwerte stehen bereits in `.env.production`. Der Publishable Key ist für Browserzugriffe bestimmt und kein Geheimnis; RLS schützt die Inhalte. Für lokale Entwicklung die Werte in `.env.local` übernehmen. GitHub-Variablen sind nicht erforderlich.
@@ -71,3 +75,35 @@ Unter Settings → Pages als Quelle **GitHub Actions** aktivieren. Der Workflow 
 ## Aktuelles Backend
 
 Projekt `izeljoxjipzfdwuqzrqv` in Frankfurt; das initiale Schema ist als `initial_coffee_schema` auf dem gehosteten Projekt angewandt. Auth-Redirects und SMTP müssen in den Supabase-Auth-Einstellungen konfiguriert sein.
+
+
+## Erweiterung v2: Bedienung und Datenfluss
+
+Unter **Kaffee hinzufügen** stehen Manuell, Barcode, Foto erkennen und Shop-Link zur Wahl. Externe Ergebnisse sind Vorschläge und überschreiben gespeicherte Sorten nicht automatisch. Ein eigener Barcode-Treffer öffnet die vorhandene Sorte; dort lässt sich ein Einkauf buchen. Unbekannte Codes lassen sich manuell zuordnen. Unterstützt werden EAN-8, EAN-13 und UPC-A; UPC wird intern auf EAN-13 normalisiert. Barcodes sind innerhalb einer privaten Sammlung eindeutig.
+
+Die externe Barcode-Suche verwendet [Open Food Facts](https://world.openfoodfacts.org/) unter der [ODbL](https://opendatacommons.org/licenses/odbl/1-0/). Herkunft und Produktlink werden mit übernommen. Die Abdeckung ist unvollständig; fehlende Produkte und Kapselsysteme müssen manuell ergänzt werden. Es werden keine Produktdaten an Open Food Facts zurückgeschrieben und keine fremden Produktbilder automatisch übernommen.
+
+Shop-Importe unterstützen `https://kaffek.de/…` und deutsche `https://www.nespresso.com/de/…`-Produktseiten. Importiert werden verfügbare JSON-LD-Daten und KaffeK-Produktattribute. Ein blockierter Abruf oder fehlende Metadaten führt zur manuellen Ergänzung. Nicht eindeutig zuordenbare Verkaufseinheiten werden nicht automatisch in Kapselpreise umgerechnet. Shop-Anmeldung, Bestellimport, automatische Käufe und laufende Preisüberwachung sind nicht enthalten.
+
+Auf der Detailseite einer Sorte wird der Bestand ausdrücklich über den Anfangsbestand aktiviert. Bisherige Verkostungen ohne Verbrauchsbuchung werden nicht nachträglich abgezogen. Jede neue Verkostung verlangt eine ausdrückliche Verbrauchsentscheidung. Änderungen und Löschungen korrigieren den gebuchten Verbrauch atomar durch Gegenbuchungen. Die Buchungshistorie ist unveränderlich; Fehler werden durch weitere Korrekturbuchungen ausgeglichen. Bei zwei offline eingerichteten Anfangsbeständen wird der zweite vom Server abgelehnt; die unbestätigte lokale Buchung kann verworfen werden. Negative Bestände bleiben als **Bestand prüfen** sichtbar.
+
+Eigene Offline-Bestände sind vorläufig. Stabile Vorgangs-IDs und versionierte Verkostungen vermeiden doppelte Abbuchungen. Nach Bestätigung einer Verkostung werden deren Ledger-Einträge in derselben lokalen Transaktion übernommen, damit ein anschließender Netzabbruch nicht zu einer falschen lokalen Menge führt. Die Synchronisierung lädt wachsende Bestandsverläufe seitenweise. Bestands- und Einkaufsdaten sind nur für den Besitzer lesbar. Freigegebene Bewertungen werden über einen eigens autorisierten RPC ohne Verbrauchsangaben ausgegeben.
+
+## OpenRouter sicher aktivieren
+
+Die Edge Function `coffee-discover` ist im Projekt bereitgestellt. Barcode und Shop-Import benötigen keinen KI-Schlüssel. Fotoerkennung bleibt bis zur vollständigen Einrichtung abgeschaltet:
+
+1. In [OpenRouter](https://openrouter.ai/settings/keys) einen eigenen App-Schlüssel mit einem selbst gewählten Kostenlimit anlegen. Das App-Anfragelimit ist kein Euro-Budget.
+2. Unter [Supabase → Edge Functions → Secrets](https://supabase.com/dashboard/project/izeljoxjipzfdwuqzrqv/functions/secrets) `OPENROUTER_API_KEY` als Secret hinterlegen. Den Schlüssel niemals in Browserkonfiguration, GitHub oder Chat schreiben.
+3. Erst nach Einrichtung des Kostenlimits das Secret `COFFEE_AI_ENABLED` auf `true` setzen. Ein erneutes Deployment ist nicht erforderlich. Mit `false` lässt sich die Funktion abschalten.
+4. Optional `COFFEE_VISION_MODEL` setzen; Standard ist `google/gemini-2.5-flash-lite`. Ein Modellwechsel erfordert eine erneute Prüfung von Bildunterstützung, Kosten und Antwortformat.
+
+Jede Fotoerkennung verlangt die ausdrückliche Bestätigung der Übertragung. Bilder werden im Browser als JPEG mit maximal 1024 Pixeln längster Kante neu gerendert und dadurch ohne EXIF-Metadaten übertragen. Erkennungsbilder werden nicht automatisch als Sammlungsfoto gespeichert. Ohne lesbare Merkmale darf die KI keine Identifikation allein anhand der Farbe behaupten. Die Anbindung überträgt maximal 100 eigene Sortennamen als Kandidaten, aber keine Bewertungen oder Bestandsdaten.
+
+Das serverseitige Tageslimit beträgt 10 KI-Anfragen je bestätigtem Nutzerkonto und insgesamt 50 KI-Anfragen pro UTC-Tag. Für Barcode- und Shop-Suche gelten jeweils 100 pro Nutzer und 1000 pro App. Reservierungen erfolgen atomar, fehlgeschlagene externe Aufrufe zählen mit. Es erfolgen keine automatischen kostenpflichtigen Wiederholungen. Die API verwendet ausschließlich serverseitige Credentials und prüft die Anmeldung zusätzlich zur JWT-Prüfung am Gateway. Private Zähler sind nicht für App-Nutzer zugänglich.
+
+## Schema- und Funktionsdeployment
+
+Bestehende v1-Projekte wenden ausschließlich `supabase/extension.sql` einmalig an; neue Projekte zuerst das Basisschema. Im produktiven Projekt sind die Erweiterung als `coffee_discovery_and_inventory` und die explizite Zugriffsverweigerung für private Zähler als `coffee_discovery_quota_policy` angewandt. Der Code der Funktion liegt unter `supabase/functions/coffee-discover/`; `index.ts` und `core.ts` werden mit aktivierter JWT-Prüfung bereitgestellt. Tests prüfen zusätzlich die Begrenzung externer Abrufe, Weiterleitungen, KI-Zustimmung, Quoten und Antwortvalidierung.
+
+Nach Veröffentlichung ist ein manueller Gerätetest für Kamera, Fotoauswahl und PWA-Offline-Nutzung auf iPhone und Android weiterhin erforderlich. Eine echte KI-Erkennung kann erst nach Aktivierung des OpenRouter-Schlüssels geprüft werden.

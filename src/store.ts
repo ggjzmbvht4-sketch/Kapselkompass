@@ -42,6 +42,8 @@ export async function save(
     deleted: previous?.deleted || false,
     updated_at: new Date().toISOString(),
     dirty: true,
+    baseData: previous?.dirty ? previous.baseData : previous?.data,
+    baseDeleted: previous?.dirty ? previous.baseDeleted : previous?.deleted,
     blob: blob || previous?.blob,
   };
   if (previous?.conflict)
@@ -51,7 +53,15 @@ export async function save(
   return row;
 }
 export async function remove(row: LocalRow) {
-  await (await db).put("records", { ...row, dirty: true, deleted: true });
+  await (
+    await db
+  ).put("records", {
+    ...row,
+    dirty: true,
+    deleted: true,
+    baseData: row.dirty ? row.baseData : row.data,
+    baseDeleted: row.dirty ? row.baseDeleted : row.deleted,
+  });
   changed();
 }
 export async function resolve(row: LocalRow, choice: "local" | "remote") {
@@ -61,6 +71,8 @@ export async function resolve(row: LocalRow, choice: "local" | "remote") {
       ? {
           ...row,
           baseVersion: row.conflict.version,
+          baseData: row.conflict.data,
+          baseDeleted: row.conflict.deleted,
           version: row.conflict.version,
           conflict: undefined,
           error: undefined,
@@ -84,10 +96,22 @@ async function perform(user: string) {
   const generation = generations.get(user) || 0;
   const valid = () => generation === (generations.get(user) || 0);
   const d = await db;
-  for (const kind of ["capsules", "tastings", "photos"] as Kind[]) {
-    for (const row of (await list(user)).filter(
-      (r) => r.kind === kind && r.dirty && !r.conflict,
-    )) {
+  for (const kind of [
+    "capsules",
+    "inventory",
+    "tastings",
+    "photos",
+    "inventory",
+  ] as Kind[]) {
+    for (const row of (await list(user))
+      .filter((r) => r.kind === kind && r.dirty && !r.conflict)
+      .sort((a, b) =>
+        kind === "inventory"
+          ? Number((b.data as { type?: string }).type === "opening") -
+              Number((a.data as { type?: string }).type === "opening") ||
+            a.updated_at.localeCompare(b.updated_at)
+          : 0,
+      )) {
       if (!valid()) return;
       try {
         if (kind === "photos" && row.blob && !row.deleted) {
@@ -120,6 +144,8 @@ async function perform(user: string) {
             await d.put("records", {
               ...row,
               conflict: remote.data,
+              baseData: remote.data.data,
+              baseDeleted: remote.data.deleted,
               error: "Auf einem anderen Gerät geändert.",
             });
             continue;
@@ -133,8 +159,17 @@ async function perform(user: string) {
           if (storageError) throw storageError;
         }
         if (!valid()) return;
+        // Commit the acknowledged tasting and its ledger entries in the same local transaction.
+        const ledger = data._inventory || [];
+        delete data._inventory;
         // A concurrent local edit must remain queued against the new server version.
         const tx = d.transaction("records", "readwrite");
+        for (const movement of ledger)
+          await tx.store.put({
+            ...movement,
+            kind: "inventory",
+            baseVersion: movement.version,
+          });
         const current: LocalRow | undefined = await tx.store.get(row.id);
         if (current) {
           const edited =
@@ -145,6 +180,8 @@ async function perform(user: string) {
               ? {
                   ...current,
                   version: data.version,
+                  baseData: data.data,
+                  baseDeleted: data.deleted,
                   baseVersion: data.version,
                   dirty: true,
                 }
@@ -170,11 +207,18 @@ async function perform(user: string) {
           });
       }
     }
-    const { data, error } = await supabase
-      .from("coffee_" + kind)
-      .select("*")
-      .eq("user_id", user);
-    if (error) throw error;
+    const data: Row[] = [];
+    for (let offset = 0; ; offset += 500) {
+      const result = await supabase
+        .from("coffee_" + kind)
+        .select("*")
+        .eq("user_id", user)
+        .order("id")
+        .range(offset, offset + 499);
+      if (result.error) throw result.error;
+      data.push(...(result.data || []));
+      if ((result.data?.length || 0) < 500) break;
+    }
     if (!valid()) return;
     for (const remote of data || []) {
       const tx = d.transaction("records", "readwrite");
@@ -225,4 +269,13 @@ export async function photoUrl(row: LocalRow, shared = false) {
     await tx.done;
   }
   return URL.createObjectURL(data);
+}
+
+export async function discardPending(row: LocalRow) {
+  if (row.kind !== "inventory" || !row.dirty || row.baseVersion !== 0)
+    throw Error(
+      "Nur nicht bestätigte Bestandsbuchungen können verworfen werden.",
+    );
+  await (await db).delete("records", row.id);
+  changed();
 }
