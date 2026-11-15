@@ -190,7 +190,15 @@ export default function DiscoveryPanel({
               mode: "ai",
               consent,
               image: await prepareImage(file!),
-              known: capsules.map((r) => ({ id: r.id, ...r.data })),
+              known: capsules.map((r) => {
+                const data = r.data as Capsule;
+                return {
+                  id: r.id,
+                  name: data.name,
+                  brand: data.brand,
+                  system: data.system,
+                };
+              }),
             });
       if (id !== requestId.current) return;
       setResults(suggestions);

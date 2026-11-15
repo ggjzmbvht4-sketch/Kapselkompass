@@ -75,9 +75,9 @@
       <h2>6. Barcode, Shop-Link und Bilderkennung</h2>
       <p>Diese Funktionen laufen nur, wenn du angemeldet bist und sie selbst startest.</p>
       <ul>
-        <li>Ein Barcode kann serverseitig bei Open Food Facts abgefragt werden, um einen Produktnamen vorzuschlagen. Deine IP-Adresse geht dabei nicht an Open Food Facts; der angefragte Code schon. Angaben sind unverbindlich und unter der Open Database License.</li>
+        <li>Ein Barcode kann serverseitig bei Open Food Facts und, falls dort nichts gefunden wird, bei UPCitemdb abgefragt werden. Deine IP-Adresse geht dabei nicht an diese Dienste; der angefragte Code schon. UPCitemdb sitzt in den USA. Angaben sind unverbindlich. Open Food Facts steht unter der Open Database License.</li>
         <li>Ein von dir eingegebener Shop-Link wird von der Serverfunktion abgerufen, um einen Vorschlag zu erzeugen. Dabei wird die Adresse der Produktseite an deinen Server übertragen.</li>
-        <li>Die Bilderkennung sendet ein von dir bestätigtes JPEG über die Serverfunktion an OpenRouter und das dort eingestellte Modell, sofern diese Funktion aktiviert ist. Ohne deine Bestätigung in der App wird kein Bild übertragen.</li>
+        <li>Die Bilderkennung sendet ein von dir bestätigtes JPEG und dazu Name, Marke und System deiner gespeicherten Sorten über die Serverfunktion an OpenRouter. Preis, Notizen, Barcodes und Shop-Links gehen nicht an das Modell. Voreingestellt ist ein Google-Modell (Gemini) über OpenRouter, sofern du dort kein anderes Modell einträgst. Ohne deine Bestätigung in der App wird kein Bild übertragen.</li>
         <li>Der Link „bei Google suchen“ öffnet erst dann Google, wenn du ihn antippst. Die App bindet keine Google-Suche ein.</li>
       </ul>
 
