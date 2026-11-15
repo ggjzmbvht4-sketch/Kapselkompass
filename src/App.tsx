@@ -636,7 +636,17 @@ export default function App() {
       </aside>
       <main>
         <header className="topbar">
-          <span className="crumb">Dein Kaffee. Dein Geschmack.</span>
+          <div className="crumb-wrap">
+            <span className="crumb">Dein Kaffee. Dein Geschmack.</span>
+            <nav className="legal-links" aria-label="Rechtliches">
+              <a href={`${import.meta.env.BASE_URL}impressum.html`}>
+                Impressum
+              </a>
+              <a href={`${import.meta.env.BASE_URL}datenschutz.html`}>
+                Datenschutz
+              </a>
+            </nav>
+          </div>
           <div className="top-actions">
             <span className="connection">
               {online ? <Cloud size={16} /> : <CloudOff size={16} />}
@@ -1437,7 +1447,15 @@ export default function App() {
           <footer>
             <Coffee size={15} />
             <span>Mit jeder Tasse ein bisschen mehr dein Geschmack.</span>
-            <span>Kapselkompass</span>
+            <span className="footer-brand">Kapselkompass</span>
+            <nav className="legal-links" aria-label="Rechtliches">
+              <a href={`${import.meta.env.BASE_URL}impressum.html`}>
+                Impressum
+              </a>
+              <a href={`${import.meta.env.BASE_URL}datenschutz.html`}>
+                Datenschutz
+              </a>
+            </nav>
           </footer>
         </div>
       </main>
@@ -2371,6 +2389,28 @@ function Auth({ recovery, done }: { recovery: boolean; done: () => void }) {
         <p role="status" className="notice">
           {notice}
         </p>
+      )}
+      {!recovery && (
+        <>
+          <label className="legal-ack">
+            <input name="privacy" type="checkbox" required />
+            <span>
+              Ich willige ein, dass E-Mail und Anmeldung an den Server des
+              Kapselkompasses übertragen werden.
+            </span>
+          </label>
+          <p className="muted">
+            Vorher die{" "}
+            <a
+              href={`${import.meta.env.BASE_URL}datenschutz.html`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Datenschutzerklärung
+            </a>{" "}
+            lesen. Ohne Konto bleibt die Demo nur auf diesem Gerät.
+          </p>
+        </>
       )}
       <Button type="submit" disabled={busy || !configured}>
         {busy

@@ -11,6 +11,8 @@
     "test:mobile": "node scripts/mobile-smoke.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/dm-sans": "^5.3.0",
+    "@fontsource-variable/playfair-display": "^5.3.0",
     "@supabase/supabase-js": "2.110.0",
     "@zxing/browser": "0.2.1",
     "@zxing/library": "0.23.0",

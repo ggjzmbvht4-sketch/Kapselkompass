@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#34271f" />
+    <title>Datenschutz – Kapselkompass</title>
+    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --bg: #f7f5f0;
+        --surface: #fff;
+        --text: #392e27;
+        --line: #e8e3da;
+        --accent: #8a5a34;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--text); line-height: 1.55; }
+      main { width: min(100%, 720px); margin: 0 auto; padding: 28px 18px 56px; }
+      a { color: var(--accent); }
+      h1 { font-family: Georgia, "Iowan Old Style", Palatino, serif; font-weight: 500; font-size: 1.7rem; margin: 0 0 8px; }
+      h2 { font-size: 1.08rem; margin: 28px 0 8px; }
+      .nav { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+      .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; }
+      ul { padding-left: 1.15rem; }
+      li { margin: 0.35rem 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <nav class="nav" aria-label="Rechtliches">
+        <a href="./">Zur App</a>
+        <a href="./impressum.html">Impressum</a>
+      </nav>
+      <h1>Datenschutzerklärung</h1>
+      <p>Stand: 15. November 2026. Diese Erklärung beschreibt, was Kapselkompass tatsächlich mit personenbezogenen Daten macht.</p>
+
+      <div class="card">
+        <h2>1. Verantwortlicher</h2>
+        <p>Fabian Hirth<br />[Straße und Hausnummer, Postleitzahl und Ort]<br />E-Mail: [E-Mail-Adresse]</p>
+        <p>Solange die Platzhalter nicht ersetzt sind, ist die Information nach Art. 13 DSGVO unvollständig. Bitte dieselben Angaben auch im Impressum eintragen.</p>
+      </div>
+
+      <h2>2. Kurzüberblick</h2>
+      <ul>
+        <li>Die Demo ohne Konto bleibt auf dem Gerät. Es wird dabei keine Sammlung an den Betreiber geschickt.</li>
+        <li>Es gibt keine Reichweitenmessung, keine Tracking-Pixel, keine Werbung und keine Social-Media-Einbindungen.</li>
+        <li>Schriften kommen von dieser Website. Es wird keine Schrift und kein Skript von Google, jsDelivr oder einem anderen CDN geladen.</li>
+        <li>Ein Konto überträgt Daten erst, nachdem du die Übertragung beim Anmelden bestätigt hast.</li>
+      </ul>
+
+      <h2>3. Hosting</h2>
+      <p>Die Website wird über GitHub Pages bereitgestellt (GitHub, Inc., ein Unternehmen der Microsoft-Unternehmensgruppe, USA). Beim Aufruf verarbeitet der Hoster Verbindungsdaten, insbesondere IP-Adresse, Datum und Uhrzeit, aufgerufene Adresse und Browserkennung.</p>
+      <p>Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO. Eine Übermittlung in die USA kann stattfinden, gestützt auf das EU-US Data Privacy Framework und ergänzend auf Standardvertragsklauseln, soweit der Anbieter zertifiziert ist. Details: <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">Datenschutzerklärung von GitHub</a>. Der Link wird erst geladen, wenn du ihn öffnest.</p>
+      <p>Ein Service Worker speichert die App-Oberfläche auf dem Gerät, damit sie offline startet. Das ist kein Tracking.</p>
+
+      <h2>4. Lokale Speicherung</h2>
+      <p>Auf dem Gerät liegen in IndexedDB die Kapseln, Verkostungen, Notizen, Fotos, Bestände und Haushalte der Demo oder deines Kontos, dazu eine Sitzung im lokalen Speicher, sobald du angemeldet bist. Das ist für die von dir genutzte Funktion erforderlich (Art. 6 Abs. 1 lit. b DSGVO). Die App setzt keine Analyse-Cookies.</p>
+
+      <h2>5. Konto und Cloud</h2>
+      <p>Wenn du ein Konto erstellst oder dich anmeldest, gehen E-Mail-Adresse und Passwort an ein Supabase-Projekt, das für diese App betrieben wird. Supabase (Supabase Inc. / Supabase Pte. Ltd.) ist dabei Auftragsverarbeiter. Das Passwort wird dort nicht im Klartext abgelegt. Ob die Daten die EU verlassen, hängt von der Region dieses Projekts ab.</p>
+      <p>Danach können synchronisiert werden:</p>
+      <ul>
+        <li>Kaffeesorten: Name, Marke, System, Barcodes, Packungsgröße, Preis, Shop-Link, Favorit</li>
+        <li>Verkostungen: Datum, Bewertungen, Zubereitung, Notizen, Schlagwörter</li>
+        <li>Fotos der Packungen oder Tassen</li>
+        <li>Bestände und Haushaltsdaten, einschließlich Einladungen an andere E-Mail-Adressen, die du selbst einträgst</li>
+        <li>Freigaben, wenn du Verkostungen mit einem anderen Konto teilst</li>
+      </ul>
+      <p>Rechtsgrundlage ist der von dir angeforderte Dienst, Art. 6 Abs. 1 lit. b DSGVO, und deine Einwilligung beim Anmelden, Art. 6 Abs. 1 lit. a DSGVO. Die Einwilligung kannst du mit Wirkung für die Zukunft widerrufen, indem du dich abmeldest und das Konto nicht weiter nutzt. Bereits gespeicherte Cloud-Daten löschst du über dein Konto beziehungsweise direkt im Projekt.</p>
+      <p>Informationen des Auftragsverarbeiters: <a href="https://supabase.com/privacy">supabase.com/privacy</a>.</p>
+
+      <h2>6. Barcode, Shop-Link und Bilderkennung</h2>
+      <p>Diese Funktionen laufen nur, wenn du angemeldet bist und sie selbst startest.</p>
+      <ul>
+        <li>Ein Barcode kann serverseitig bei Open Food Facts abgefragt werden, um einen Produktnamen vorzuschlagen. Deine IP-Adresse geht dabei nicht an Open Food Facts; der angefragte Code schon. Angaben sind unverbindlich und unter der Open Database License.</li>
+        <li>Ein von dir eingegebener Shop-Link wird von der Serverfunktion abgerufen, um einen Vorschlag zu erzeugen. Dabei wird die Adresse der Produktseite an deinen Server übertragen.</li>
+        <li>Die Bilderkennung sendet ein von dir bestätigtes JPEG über die Serverfunktion an OpenRouter und das dort eingestellte Modell, sofern diese Funktion aktiviert ist. Ohne deine Bestätigung in der App wird kein Bild übertragen.</li>
+        <li>Der Link „bei Google suchen“ öffnet erst dann Google, wenn du ihn antippst. Die App bindet keine Google-Suche ein.</li>
+      </ul>
+
+      <h2>7. Speicherdauer</h2>
+      <p>Lokale Daten bleiben, bis du die Website-Daten des Browsers löschst. Cloud-Daten bleiben im Supabase-Projekt, bis du sie löschst. Der Hoster speichert Verbindungsdaten nach seinen eigenen Fristen.</p>
+
+      <h2>8. Deine Rechte</h2>
+      <p>Du hast das Recht auf Auskunft, Berichtigung, Löschung, Einschränkung, Datenübertragbarkeit und Widerspruch gegen Verarbeitungen nach Art. 6 Abs. 1 lit. f DSGVO sowie das Recht, eine Einwilligung zu widerrufen (Art. 15 bis 21 und Art. 7 Abs. 3 DSGVO).</p>
+      <p>Du kannst dich bei einer Datenschutzaufsichtsbehörde beschweren (Art. 77 DSGVO). Für eine verantwortliche Stelle in Baden-Württemberg ist das der Landesbeauftragte für den Datenschutz und die Informationsfreiheit Baden-Württemberg.</p>
+      <p>Es gibt keine automatisierte Entscheidung mit rechtlicher Wirkung. Bewertungen und Vorschläge ersetzen kein Urteil über dich.</p>
+
+      <h2>9. Pflicht zur Bereitstellung</h2>
+      <p>Für die lokale Demo musst du keine Daten angeben. E-Mail und Passwort sind nur nötig, wenn du ein Konto willst.</p>
+    </main>
+  </body>
+</html>
