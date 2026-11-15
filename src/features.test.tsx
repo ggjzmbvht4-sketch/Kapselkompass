@@ -7,6 +7,7 @@ import {
   fireEvent,
   waitFor,
   cleanup,
+  act,
 } from "@testing-library/react";
 import { EntryForm } from "./App";
 import InventoryPanel from "./InventoryPanel";
@@ -15,6 +16,7 @@ import { criteria, type LocalRow } from "./domain";
 import HouseholdPanel from "./HouseholdPanel";
 import HouseholdRatings from "./HouseholdRatings";
 import { householdAction, type Household } from "./households";
+import { discoverBarcode } from "./discovery";
 vi.mock("./households", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./households")>()),
   householdAction: vi.fn(async () => ({ id: "house" })),
@@ -27,6 +29,10 @@ vi.mock("./backend", () => ({
 }));
 vi.mock("./discovery", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./discovery")>()),
+  discoverBarcode: vi.fn(async () => ({
+    suggestions: [],
+    outcome: "not_found",
+  })),
   discover: vi.fn(async () => [
     {
       name: "Erkannter Kaffee",
@@ -64,6 +70,97 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe("Erfassung und Bestand bedienen", () => {
+  it("recognizes the reported Mövenpick capsule offline without querying a provider", async () => {
+    const suggest = vi.fn();
+    render(
+      <DiscoveryPanel
+        capsules={[]}
+        demo
+        onSuggest={suggest}
+        onExisting={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Barcode" }));
+    fireEvent.change(screen.getByLabelText("Barcode-Ziffern"), {
+      target: { value: "4006581061030" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Suchen" }));
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Angaben zur Prüfung übernehmen",
+      }),
+    );
+    expect(suggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Crema Lungo",
+        brand: "Mövenpick",
+        system: "Original",
+        pack_size: 10,
+        barcodes: ["4006581061030"],
+      }),
+    );
+    expect(discoverBarcode).not.toHaveBeenCalled();
+  });
+  it("keeps an unknown barcode for manual entry without showing a false product hit", async () => {
+    const suggest = vi.fn();
+    render(
+      <DiscoveryPanel
+        capsules={[]}
+        demo={false}
+        onSuggest={suggest}
+        onExisting={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Barcode" }));
+    fireEvent.change(screen.getByLabelText("Barcode-Ziffern"), {
+      target: { value: "4006381333931" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Suchen" }));
+    expect(
+      await screen.findByText(/Kein Produkteintrag zu diesem Barcode/),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Angaben zur Prüfung übernehmen" }),
+    ).toBeNull();
+    expect(
+      screen
+        .getByRole("link", { name: "Im Web nach diesem Barcode suchen" })
+        .getAttribute("href"),
+    ).toContain("4006381333931");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Code übernehmen und Angaben selbst ergänzen",
+      }),
+    );
+    expect(suggest).toHaveBeenCalledWith({ barcodes: ["4006381333931"] });
+  });
+  it("does not let an old external search replace the result for a newly entered barcode", async () => {
+    let complete!: (result: { suggestions: []; outcome: "not_found" }) => void;
+    vi.mocked(discoverBarcode).mockReturnValueOnce(
+      new Promise((done) => {
+        complete = done;
+      }),
+    );
+    render(
+      <DiscoveryPanel
+        capsules={[]}
+        demo={false}
+        onSuggest={vi.fn()}
+        onExisting={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Barcode" }));
+    const input = screen.getByLabelText("Barcode-Ziffern");
+    fireEvent.change(input, { target: { value: "4006381333931" } });
+    fireEvent.click(screen.getByRole("button", { name: "Suchen" }));
+    fireEvent.change(input, { target: { value: "4006581061030" } });
+    fireEvent.click(screen.getByRole("button", { name: "Suchen" }));
+    await act(async () => {
+      complete({ suggestions: [], outcome: "not_found" });
+    });
+    expect(screen.getByText("Mövenpick Crema Lungo")).toBeTruthy();
+    expect(screen.queryByText(/Kein Produkteintrag/)).toBeNull();
+  });
   it("requires an explicit stock decision and saves zero when no consumption is chosen", async () => {
     const save = vi.fn();
     const { container } = render(

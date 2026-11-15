@@ -48,7 +48,7 @@ export async function limitedFetch(
   const response = await fetch(url, {
     ...init,
     redirect: "manual",
-    signal: AbortSignal.timeout(20000),
+    signal: init.signal ?? AbortSignal.timeout(20000),
   });
   const reader = response.body?.getReader();
   let length = 0;

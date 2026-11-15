@@ -49,6 +49,25 @@ const request = (body: unknown, authenticated = true) =>
     body: JSON.stringify(body),
   });
 describe("Edge Function authentication and AI boundary", () => {
+  it("returns the reported Mövenpick coffee through the authenticated handler", async () => {
+    const response = await handler(
+      request({ mode: "barcode", code: "4006581061030" }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      outcome: "found",
+      suggestions: [
+        {
+          name: "Crema Lungo",
+          brand: "Mövenpick",
+          barcodes: ["4006581061030"],
+        },
+      ],
+    });
+    expect(calls.every((url) => url.startsWith("https://backend.test/"))).toBe(
+      true,
+    );
+  });
   it("rejects anonymous requests before any external call", async () => {
     expect(
       (

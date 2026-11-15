@@ -5,9 +5,17 @@ export type Suggestion = Partial<Capsule> & {
   explanation?: string;
   existing_id?: string;
 };
+export type BarcodeResult = {
+  suggestions: Suggestion[];
+  outcome: "found" | "not_found" | "unavailable";
+  message?: string;
+};
 export async function discover(
   body: Record<string, unknown>,
 ): Promise<Suggestion[]> {
+  return (await requestDiscovery(body))?.suggestions || [];
+}
+async function requestDiscovery(body: Record<string, unknown>) {
   if (!navigator.onLine)
     throw Error(
       "Die externe Erkennung benötigt Internet. Eigene Barcodes und die manuelle Erfassung funktionieren offline.",
@@ -27,7 +35,23 @@ export async function discover(
     throw Error(message);
   }
   if (data?.error) throw Error(data.error);
-  return data?.suggestions || [];
+  return data;
+}
+export async function discoverBarcode(code: string): Promise<BarcodeResult> {
+  const data = await requestDiscovery({ mode: "barcode", code });
+  // Older deployed functions returned an empty product as a "suggestion".
+  const suggestions: Suggestion[] = (data?.suggestions || []).filter(
+    (s: Suggestion) => typeof s.name === "string" && s.name.trim(),
+  );
+  return {
+    suggestions,
+    outcome: suggestions.length
+      ? "found"
+      : data?.outcome === "unavailable"
+        ? "unavailable"
+        : "not_found",
+    message: data?.message,
+  };
 }
 export function ownBarcode(rows: LocalRow[], value: string) {
   const code = normalizeBarcode(value);

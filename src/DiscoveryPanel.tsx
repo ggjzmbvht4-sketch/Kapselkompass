@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { ScanBarcode, Camera, Link, PenLine } from "lucide-react";
 import {
   discover,
+  discoverBarcode,
   ownBarcode,
   prepareImage,
   type Suggestion,
 } from "./discovery";
 import { normalizeBarcode, type Capsule, type LocalRow } from "./domain";
+import { catalogBarcode } from "../supabase/functions/coffee-discover/catalog";
 export default function DiscoveryPanel({
   capsules,
   demo,
@@ -29,16 +31,20 @@ export default function DiscoveryPanel({
     [error, setError] = useState(""),
     [results, setResults] = useState<Suggestion[]>([]),
     [empty, setEmpty] = useState(false),
+    [barcodeMessage, setBarcodeMessage] = useState(""),
     [camera, setCamera] = useState(false),
     [assign, setAssign] = useState("");
-  const video = useRef<HTMLVideoElement>(null),
+  const requestId = useRef(0),
+    video = useRef<HTMLVideoElement>(null),
     stop = useRef<() => void>(() => {}),
     queryRef = useRef<(value: string) => Promise<void>>(async () => {});
   async function lookup(value: string) {
+    const id = ++requestId.current;
     setBusy(true);
     setError("");
     setResults([]);
     setEmpty(false);
+    setBarcodeMessage("");
     try {
       const normalized = normalizeBarcode(value);
       setCode(normalized);
@@ -53,22 +59,43 @@ export default function DiscoveryPanel({
         ]);
         return;
       }
+      const known = catalogBarcode(normalized);
+      if (known) {
+        setResults([known]);
+        return;
+      }
       if (demo)
         throw Error(
           "Externe Produktsuche ist in der lokalen Demo nicht verfügbar. Du kannst den Code manuell zuordnen.",
         );
-      const found = await discover({ mode: "barcode", code: normalized });
-      setResults(found);
-      setEmpty(!found.length);
+      const found = await discoverBarcode(normalized);
+      if (id !== requestId.current) return;
+      setResults(found.suggestions);
+      setEmpty(found.outcome !== "found");
+      setBarcodeMessage(
+        found.message ||
+          (found.outcome === "unavailable"
+            ? "Die Produktsuche ist momentan nicht vollständig verfügbar. Bitte erneut versuchen oder den Barcode manuell zuordnen."
+            : found.outcome === "not_found"
+              ? "Kein Produkteintrag zu diesem Barcode gefunden. Du kannst ihn für eine neue Sorte übernehmen oder einer vorhandenen Sorte zuordnen."
+              : ""),
+      );
     } catch (e) {
+      if (id !== requestId.current) return;
       setError(
         e instanceof Error ? e.message : "Barcode konnte nicht gelesen werden.",
       );
     } finally {
-      setBusy(false);
+      if (id === requestId.current) setBusy(false);
     }
   }
   queryRef.current = lookup;
+  useEffect(
+    () => () => {
+      requestId.current++;
+    },
+    [],
+  );
   useEffect(() => {
     if (!camera || !video.current) return;
     let disposed = false;
@@ -117,6 +144,7 @@ export default function DiscoveryPanel({
     };
   }, [camera]);
   async function readFile(image: File) {
+    const id = ++requestId.current;
     setBusy(true);
     setError("");
     let object = "";
@@ -127,17 +155,20 @@ export default function DiscoveryPanel({
       const reader = new BrowserMultiFormatReader();
       object = URL.createObjectURL(image);
       const result = await reader.decodeFromImageUrl(object);
+      if (id !== requestId.current) return;
       await lookup(result.getText());
     } catch {
+      if (id !== requestId.current) return;
       setError(
         "Kein lesbarer Barcode im Bild gefunden. Bitte näher fotografieren oder die Ziffern eingeben.",
       );
     } finally {
       if (object) URL.revokeObjectURL(object);
-      setBusy(false);
+      if (id === requestId.current) setBusy(false);
     }
   }
   async function run() {
+    const id = ++requestId.current;
     setBusy(true);
     setError("");
     setResults([]);
@@ -156,14 +187,16 @@ export default function DiscoveryPanel({
               image: await prepareImage(file!),
               known: capsules.map((r) => ({ id: r.id, ...r.data })),
             });
+      if (id !== requestId.current) return;
       setResults(suggestions);
       setEmpty(!suggestions.length);
     } catch (e) {
+      if (id !== requestId.current) return;
       setError(
         e instanceof Error ? e.message : "Die Erkennung ist nicht erreichbar.",
       );
     } finally {
-      setBusy(false);
+      if (id === requestId.current) setBusy(false);
     }
   }
   return (
@@ -180,12 +213,15 @@ export default function DiscoveryPanel({
             key={id}
             className={mode === id ? "active" : ""}
             onClick={() => {
+              requestId.current++;
               stop.current();
               setCamera(false);
               setMode(id as typeof mode);
               setResults([]);
               setError("");
               setEmpty(false);
+              setBarcodeMessage("");
+              setBusy(false);
             }}
           >
             <Icon size={17} />
@@ -196,8 +232,9 @@ export default function DiscoveryPanel({
       {mode === "barcode" && (
         <div className="capture-content">
           <p>
-            Scanne den Strichcode auf der Verpackung. Eigene Zuordnungen sind
-            auch offline verfügbar.
+            Scanne den Strichcode auf der Verpackung. Wir prüfen deine Sammlung,
+            den Kapselkatalog und zusätzliche Produktquellen. Nicht jede Sorte
+            ist bereits erfasst.
           </p>
           <div className="capture-row">
             <button
@@ -233,7 +270,15 @@ export default function DiscoveryPanel({
               inputMode="numeric"
               value={code}
               placeholder="EAN oder UPC eingeben"
-              onChange={(e) => setCode(e.target.value)}
+              onChange={(e) => {
+                requestId.current++;
+                setCode(e.target.value);
+                setBusy(false);
+                setResults([]);
+                setEmpty(false);
+                setError("");
+                setBarcodeMessage("");
+              }}
             />
             <button
               type="button"
@@ -371,13 +416,32 @@ export default function DiscoveryPanel({
           </button>
         </div>
       )}
-      {busy && <p role="status">Wird erkannt …</p>}
+      {busy && (
+        <p role="status">
+          {mode === "barcode" ? "Produkt wird gesucht …" : "Wird erkannt …"}
+        </p>
+      )}
       {error && (
         <p className="error" role="alert">
           {error}
         </p>
       )}
-      {empty && (
+      {mode === "barcode" && barcodeMessage && (
+        <p className="notice" role="status">
+          {barcodeMessage}
+        </p>
+      )}
+      {mode === "barcode" && !busy && code && (empty || error) && (
+        <a
+          className="text-link barcode-web-search"
+          href={`https://www.google.com/search?q=${encodeURIComponent(code.replace(/[\s-]/g, "") + " Kaffee")}`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Im Web nach diesem Barcode suchen
+        </a>
+      )}
+      {empty && mode !== "barcode" && (
         <p className="notice">
           Nicht eindeutig erkannt. Bitte ein Foto mit lesbarer Beschriftung
           verwenden oder die Angaben manuell ergänzen.

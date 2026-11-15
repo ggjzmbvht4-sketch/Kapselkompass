@@ -2,6 +2,16 @@
 
 Dein persönliches Kaffeetagebuch als deutschsprachige PWA. React + TypeScript + Vite, Supabase Auth/Postgres/Storage, GitHub Pages.
 
+## Korrektur v3.0.4: Barcode-Suche mit zusätzlichen Quellen
+
+Die Suche prüft zuerst die eigene Sammlung und danach einen kleinen, mitgelieferten Kapselkatalog. Dieser enthält vier anhand der Hersteller-Verkaufsunterlagen geprüfte Mövenpick-Verbraucherpackungen: Crema Lungo (4006581061030), Classico Lungo (4006581061047), Der Himmlische Lungo (4006581061054) und Gusto Italiano Lungo (4006581061078), jeweils 10 Kapseln für Original. Versandkarton-EANs werden nicht als 10er-Packungen erkannt. Der Katalog ist auch offline verfügbar; die Produktangaben bleiben vor dem Speichern prüfbar. Preise und Intensität werden nicht aus widersprüchlichen älteren Produktangaben geschätzt.
+
+Für weitere Barcodes fragt die authentifizierte Edge Function Open Food Facts und bei einem fehlenden Treffer oder Ausfall zusätzlich UPCitemdb ab. Es werden nur der Barcode und ein App-User-Agent an die Produktanbieter gesendet, keine Kontodaten, Bewertungen oder Bilder. UPCitemdb verwendet den kostenlosen, schlüssellosen Endpoint mit derzeit 100 Anfragen pro Tag und 6 pro Minute pro IP; es wird kein kostenpflichtiges Abo eingerichtet. Die bestehende tägliche Nutzerquote bleibt erhalten. Jede Quelle hat ein Zeitlimit von 8 Sekunden und ein Antwortlimit von 500 KB. Ein Treffer benötigt einen Produktnamen; UPCitemdb-Treffer müssen zusätzlich genau zur normalisierten EAN/UPC passen.
+
+Fehlende Einträge werden von Ausfällen und Anbieterlimits unterschieden. Leere Produktantworten erscheinen nicht länger als angebliche Treffer. Bei einem fehlenden Ergebnis bleiben manuelle Erfassung, Zuordnung zu einer vorhandenen Sorte und eine ausdrücklich angeklickte Websuche möglich. Frühere Suchantworten können eine inzwischen geänderte Barcode-Eingabe nicht mehr überschreiben. Es gibt weiterhin keine vollständige Abdeckung aller Kapselmarken.
+
+Quellen: [Mövenpick-Herstellerangaben](https://professional.darboven.com/de-de/produkte/marken/moevenpick/einzelhandels-sortiment), EAN-Zuordnungen aus dem Mövenpick-Verkaufsblatt „Enjoy Best Taste“ (2024, Kapseln, Feld EAN Code CU), [zusätzliche Bestätigung für die gemeldete Crema-Lungo-EAN](https://www.lebensmittel-sonderposten.de/produkte/kaffee-kakao-tee/kaffee-kapseln/19737/moevenpick-kapseln-nespresso-crema-lungo-10er-57g-mhd-30.11.25), [UPCitemdb-Free-Limits](https://www.upcitemdb.com/wp/docs/main/development/plan/).
+
 ## Korrektur v3.0.3: Fotos, Skalen und App-Aktualisierung
 
 Ausgewählte Fotos werden sofort aus Kamera/Galerie in unabhängige Dateibytes eingelesen. Bis das abgeschlossen ist, bleibt Speichern gesperrt. Der bestehende binäre Upload und die Wiederherstellung ausstehender Fotos bleiben erhalten. Nach einem Fotoersatz unter derselben Datensatz-ID lädt die Vorschau neu; fehlgeschlagene Anzeigen lassen sich erneut laden.

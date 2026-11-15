@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { chromium } from "playwright-core";
 
 // Only local production assets and synthetic IndexedDB data; no real accounts.
+const { version } = JSON.parse(await readFile("package.json", "utf8"));
 let revision = 1;
 const root = resolve("dist");
 const mime = {
@@ -56,7 +57,7 @@ try {
   await context.route("https://**/*", (route) => route.abort());
   const page = await context.newPage();
   await page.goto(url + "#/profil");
-  await page.getByRole("heading", { name: "App-Version 3.0.3" }).waitFor();
+  await page.getByRole("heading", { name: `App-Version ${version}` }).waitFor();
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;
   });
@@ -90,7 +91,7 @@ try {
     page.waitForEvent("load"),
     page.getByRole("button", { name: "Jetzt aktualisieren" }).click(),
   ]);
-  await page.getByRole("heading", { name: "App-Version 3.0.3" }).waitFor();
+  await page.getByRole("heading", { name: `App-Version ${version}` }).waitFor();
   const photo = await page.evaluate(async () => {
     const db = await new Promise((done) => {
       const r = indexedDB.open("kapselkompass", 2);

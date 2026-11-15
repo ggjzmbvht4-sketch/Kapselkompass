@@ -282,6 +282,37 @@ try {
         .locator(".capture-tabs")
         .getByRole("button", { name, exact: true })
         .click();
+      if (name === "Barcode") {
+        if (width === 390) await context.setOffline(true);
+        await page.getByLabel("Barcode-Ziffern").fill("4006581061030");
+        await page.getByRole("button", { name: "Suchen", exact: true }).click();
+        await page
+          .getByText("Mövenpick Crema Lungo", { exact: true })
+          .waitFor();
+        await page
+          .getByRole("button", {
+            name: "Angaben zur Prüfung übernehmen",
+            exact: true,
+          })
+          .click();
+        assert.equal(
+          await page.locator('dialog input[name="name"]').inputValue(),
+          "Crema Lungo",
+        );
+        assert.equal(
+          await page.locator('dialog input[name="brand"]').inputValue(),
+          "Mövenpick",
+        );
+        assert.equal(
+          await page.locator('dialog input[name="pack_size"]').inputValue(),
+          "10",
+        );
+        assert.equal(
+          await page.locator('dialog input[name="barcodes"]').inputValue(),
+          "4006581061030",
+        );
+        if (width === 390) await context.setOffline(false);
+      }
       await check("capture-" + name);
     }
     await page

@@ -1,3 +1,4 @@
+import { lookupBarcode } from "./barcodeLookup.ts";
 import {
   barcode,
   cleanSuggestion,
@@ -118,53 +119,7 @@ Deno.serve(async (req: Request) => {
       const q = await quota.json();
       return reply({ error: q.message || "Anfragelimit erreicht." }, 429);
     }
-    if (body.mode === "barcode") {
-      const { response, text } = await limitedFetch(
-        "https://world.openfoodfacts.org/api/v2/product/" +
-          code +
-          ".json?fields=product_name,product_name_de,brands,quantity,product_quantity,product_quantity_unit",
-        {
-          headers: {
-            "User-Agent":
-              "Kapselkompass/2.0 (https://github.com/ggjzmbvht4-sketch/Kapselkompass)",
-          },
-        },
-        500000,
-      );
-      if (response.status === 404)
-        return reply({
-          suggestions: [
-            {
-              barcodes: [code],
-              explanation:
-                "Nicht in Open Food Facts gefunden. Bitte manuell ergänzen oder einer eigenen Sorte zuordnen.",
-            },
-          ],
-        });
-      if (!response.ok)
-        throw Error(
-          "Produktsuche ist gerade nicht erreichbar. Der Code kann manuell zugeordnet werden.",
-        );
-      const p = JSON.parse(text).product;
-      return reply({
-        suggestions: [
-          {
-            ...cleanSuggestion({
-              name: p?.product_name_de || p?.product_name,
-              brand: p?.brands,
-            }),
-            barcodes: [code],
-            source: {
-              name: "Open Food Facts (ODbL)",
-              url: "https://world.openfoodfacts.org/product/" + code,
-              imported_at: new Date().toISOString(),
-            },
-            explanation:
-              "Open Food Facts enthält nicht jede Kapselsorte. Angaben bitte prüfen.",
-          },
-        ],
-      });
-    }
+    if (body.mode === "barcode") return reply(await lookupBarcode(code));
     if (body.mode === "shop") {
       let current = url!;
       for (let i = 0; i < 4; i++) {
@@ -186,14 +141,12 @@ Deno.serve(async (req: Request) => {
       throw Error("Der Produktlink enthält zu viele Weiterleitungen.");
     }
     const known = Array.isArray(body.known)
-      ? body.known
-          .slice(0, 100)
-          .map((p: any) => ({
-            id: String(p.id || "").slice(0, 36),
-            name: String(p.name || "").slice(0, 120),
-            brand: String(p.brand || "").slice(0, 80),
-            system: String(p.system || "").slice(0, 80),
-          }))
+      ? body.known.slice(0, 100).map((p: any) => ({
+          id: String(p.id || "").slice(0, 36),
+          name: String(p.name || "").slice(0, 120),
+          brand: String(p.brand || "").slice(0, 80),
+          system: String(p.system || "").slice(0, 80),
+        }))
       : [];
     const response = await limitedFetch(
       "https://openrouter.ai/api/v1/chat/completions",
