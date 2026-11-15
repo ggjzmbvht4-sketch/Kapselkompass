@@ -38,7 +38,7 @@ Die Datenbanktests führen das echte Schema in isoliertem WASM-Postgres (PGlite)
 2. `supabase/schema.sql` einmal im SQL Editor des neuen Projekts ausführen. Das Schema verwendet ausschließlich `coffee_*`-Tabellen, ein internes `coffee_private`-Schema und den privaten Bucket `coffee-photos`.
 3. Auth → URL Configuration: Site URL `https://ggjzmbvht4-sketch.github.io/Kapselkompass/`; dieselbe URL und für die Entwicklung `http://localhost:5173/Kapselkompass/` als erlaubte Redirects eintragen. E-Mail-Bestätigung aktiv lassen.
 4. Für echte Nutzer einen eigenen SMTP-Anbieter in Supabase konfigurieren. Der integrierte Testversand ist beschränkt und kann externe Empfänger ablehnen.
-5. GitHub → Settings → Secrets and variables → Actions → Variables: `VITE_SUPABASE_URL` und `VITE_SUPABASE_PUBLISHABLE_KEY` eintragen. Diese Werte sind für Browserzugriffe bestimmt; RLS schützt die Inhalte.
+5. Die öffentlichen Projektwerte stehen bereits in `.env.production`. Der Publishable Key ist für Browserzugriffe bestimmt und kein Geheimnis; RLS schützt die Inhalte. Für lokale Entwicklung die Werte in `.env.local` übernehmen. GitHub-Variablen sind nicht erforderlich.
 6. Workflow erneut starten. Zwei echte Testkonten anlegen, E-Mails bestätigen, einen Kaffee mit Foto erfassen, gegenseitige Freigabe und Widerruf testen.
 
 Das versionierte SQL ist die Quelle für die initiale Einrichtung. Sobald eine lokale Supabase-CLI zur Verfügung steht, mit `supabase migration new initial_coffee_schema` eine Migration erzeugen und den SQL-Inhalt übernehmen. Hier konnte die CLI wegen ihres schreibgeschützten Konfigurationsverzeichnisses nicht initialisiert werden.
@@ -67,3 +67,7 @@ Unter Settings → Pages als Quelle **GitHub Actions** aktivieren. Der Workflow 
 ## Struktur
 
 `src/App.tsx`: Oberfläche und Formulare · `src/store.ts`: IndexedDB, Warteschlange und Synchronisierung · `src/domain.ts`: Fachtypen und Berechnungen · `supabase/schema.sql`: Datenbank, RPCs, RLS und Storage-Policies.
+
+## Aktuelles Backend
+
+Projekt `izeljoxjipzfdwuqzrqv` in Frankfurt; das initiale Schema ist als `initial_coffee_schema` auf dem gehosteten Projekt angewandt. Auth-Redirects und SMTP müssen in den Supabase-Auth-Einstellungen konfiguriert sein.
