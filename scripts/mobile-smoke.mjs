@@ -301,7 +301,7 @@ try {
     await page.evaluate((id) => {
       location.hash = "/kaffee/" + id;
     }, cap);
-    await page.locator(".tasting").waitFor();
+    await page.locator(".tasting").first().waitFor();
     await check("private-diary");
     if (width < 650 && !probe) {
       const cdp = await context.newCDPSession(page);
@@ -330,6 +330,67 @@ try {
       await cdp.detach();
     }
     if (width === 390 && !probe) {
+      await page.getByRole("button", { name: "Verkostung hinzufügen" }).click();
+      await page.locator("dialog").waitFor();
+      for (const label of [
+        "Aroma",
+        "Intensität",
+        "Säure",
+        "Bitterkeit",
+        "Körper",
+        "Gesamtnote",
+      ])
+        await page
+          .getByRole("button", { name: `${label}: 7 von 10`, exact: true })
+          .click();
+      await page.getByLabel("Verbrauch bestätigen").selectOption("no");
+      await page.locator("dialog .upload input").setInputFiles({
+        name: "Galeriefoto.png",
+        mimeType: "image/png",
+        buffer: png,
+      });
+      await page.getByText("1 Foto(s) ausgewählt", { exact: true }).waitFor();
+      const acknowledged = page.waitForResponse(
+        (response) =>
+          response.url().endsWith("/rpc/coffee_save_record") &&
+          response.request().postDataJSON()?.p_kind === "photos",
+      );
+      await page
+        .getByRole("button", { name: "In meinem Tagebuch speichern" })
+        .click();
+      await page.locator("dialog").waitFor({ state: "detached" });
+      const image = page
+        .locator('.tasting .photo img[alt="Galeriefoto.png"]')
+        .first();
+      await image.waitFor();
+      await page.waitForFunction(() => {
+        const image = document.querySelector(
+          '.tasting .photo img[alt="Galeriefoto.png"]',
+        );
+        return (
+          image instanceof HTMLImageElement &&
+          image.complete &&
+          image.naturalWidth > 0
+        );
+      });
+      await acknowledged;
+      const uploaded = await page.evaluate(async (uid) => {
+        const store = await import("/Kapselkompass/src/store.ts");
+        await store.sync(uid);
+        return (await store.list(uid)).find(
+          (r) => r.kind === "photos" && r.data.caption === "Galeriefoto.png",
+        );
+      }, uid);
+      assert.equal(Boolean(uploaded?.dirty), false);
+      assert.ok(
+        uploads.length,
+        "The saved gallery photo must be uploaded before acknowledgement",
+      );
+      assert.equal(uploads.at(-1).type, "image/png");
+      assert.deepEqual(uploads.at(-1).bytes, png);
+      console.log(
+        "Photo flow: gallery selection, diary save, raw binary upload, metadata acknowledgement and decoded preview passed.",
+      );
       const result = await page.evaluate(
         async ({ uid, cap, bytes }) => {
           const store = await import("/Kapselkompass/src/store.ts");
@@ -368,6 +429,38 @@ try {
     await page.getByRole("button", { name: "Verkostung hinzufügen" }).click();
     await page.locator("dialog").waitFor();
     await check("tasting-form");
+    for (const [label, left, right] of [
+      ["Aroma", "zurückhaltend", "ausgeprägt"],
+      ["Intensität", "mild", "kräftig"],
+      ["Säure", "wenig", "viel"],
+      ["Bitterkeit", "wenig", "viel"],
+      ["Körper", "leicht", "vollmundig"],
+      ["Gesamtnote", "gefällt mir wenig", "ausgezeichnet"],
+    ]) {
+      const scale = page.getByRole("group", { name: label, exact: true });
+      assert.ok(
+        (await scale.locator(".rating-description").innerText()).includes(
+          `1: ${left}`,
+        ),
+      );
+      assert.ok(
+        (await scale.locator(".rating-description").innerText()).includes(
+          `10: ${right}`,
+        ),
+      );
+      await scale
+        .getByRole("button", { name: `${label}: 10 von 10`, exact: true })
+        .click();
+      assert.equal(
+        await scale.locator(".rating-selection").innerText(),
+        "Ausgewählt: 10 von 10",
+      );
+    }
+    if (width === 390)
+      await page.screenshot({
+        path: "/tmp/kapsel-rating-after.png",
+        fullPage: true,
+      });
     const dialog = await page
       .locator("dialog")
       .evaluate((e) => ({ scroll: e.scrollWidth, client: e.clientWidth }));

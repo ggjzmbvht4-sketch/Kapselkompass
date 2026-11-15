@@ -38,6 +38,7 @@ import {
 } from "./domain";
 import * as store from "./store";
 import { materializePhotos } from "./photoFiles";
+import { AppUpdateNotice, AppVersion } from "./AppUpdate";
 import DiscoveryPanel from "./DiscoveryPanel";
 import InventoryPanel from "./InventoryPanel";
 import HouseholdPanel from "./HouseholdPanel";
@@ -137,7 +138,7 @@ function Photos({
     </div>
   );
 }
-function PhotoView({
+export function PhotoView({
   row,
   shared,
   onDelete,
@@ -147,10 +148,14 @@ function PhotoView({
   onDelete?: (r: LocalRow) => void;
 }) {
   const [url, setUrl] = useState(""),
-    [err, setErr] = useState("");
+    [err, setErr] = useState(""),
+    [attempt, setAttempt] = useState(0);
+  const path = (row.data as Photo).path;
   useEffect(() => {
     let alive = true,
       object = "";
+    setUrl("");
+    setErr("");
     store
       .photoUrl(row, shared)
       .then((v) => {
@@ -165,13 +170,31 @@ function PhotoView({
       alive = false;
       if (object) URL.revokeObjectURL(object);
     };
-  }, [row.id, shared]);
+  }, [row.id, row.blob, row.updated_at, row.version, path, shared, attempt]);
   return (
     <div className="photo">
       {url ? (
-        <img src={url} alt={(row.data as Photo).caption} />
+        <img
+          src={url}
+          alt={(row.data as Photo).caption}
+          onError={() => {
+            setErr("Das Foto konnte nicht angezeigt werden.");
+            setUrl("");
+          }}
+        />
       ) : (
-        <span>{err || "Foto lädt …"}</span>
+        <span role={err ? "status" : undefined}>
+          {err || "Foto lädt …"}
+          {err && (
+            <button
+              className="photo-retry"
+              type="button"
+              onClick={() => setAttempt((n) => n + 1)}
+            >
+              Foto erneut laden
+            </button>
+          )}
+        </span>
       )}
       {onDelete && (!row.household_id || row.user_id === row.cache_user) && (
         <button aria-label="Foto löschen" onClick={() => onDelete(row)}>
@@ -209,8 +232,7 @@ export default function App() {
     [sort, setSort] = useState("recent"),
     [selected, setSelected] = useState<string[]>([]),
     [showFilters, setShowFilters] = useState(false),
-    [install, setInstall] = useState<any>(null),
-    [update, setUpdate] = useState(false);
+    [install, setInstall] = useState<any>(null);
   const uid = user?.id || (demo ? DEMO : "");
   const householdState =
     cacheOwner === uid ? loadedHouseholds : emptyHouseholds;
@@ -282,8 +304,6 @@ export default function App() {
       setInstall(e);
     };
     window.addEventListener("beforeinstallprompt", prompt);
-    const upd = () => setUpdate(true);
-    window.addEventListener("app-update", upd);
     if (supabase) {
       supabase.auth.getSession().then(({ data }) => {
         setUser(data.session?.user || null);
@@ -299,7 +319,6 @@ export default function App() {
         window.removeEventListener("online", net);
         window.removeEventListener("offline", net);
         window.removeEventListener("beforeinstallprompt", prompt);
-        window.removeEventListener("app-update", upd);
       };
     }
     setReady(true);
@@ -308,7 +327,6 @@ export default function App() {
       window.removeEventListener("online", net);
       window.removeEventListener("offline", net);
       window.removeEventListener("beforeinstallprompt", prompt);
-      window.removeEventListener("app-update", upd);
     };
   }, []);
   useEffect(() => {
@@ -716,15 +734,7 @@ export default function App() {
               werden nicht in die Cloud übertragen.
             </div>
           )}
-          {update && (
-            <div className="notice">
-              Eine neue Version ist verfügbar. Schließe alle App-Fenster und
-              öffne die App erneut.
-              <button onClick={() => setUpdate(false)} aria-label="Schließen">
-                <X />
-              </button>
-            </div>
-          )}
+          <AppUpdateNotice editing={Boolean(modal || auth || recovery)} />
           {conflicts.map((r) => (
             <div className="notice" key={r.id}>
               <span>
@@ -777,13 +787,16 @@ export default function App() {
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
                     onChange={async (e) => {
-                      const file = e.target.files?.[0];
+                      const input = e.currentTarget;
+                      const file = input.files?.[0];
                       if (!file) return;
                       try {
                         await store.replacePendingPhoto(r, file);
                         void synchronize();
                       } catch (err) {
                         setNotice(message(err));
+                      } finally {
+                        input.value = "";
                       }
                     }}
                   />
@@ -1773,6 +1786,7 @@ export function EntryForm({
 }) {
   const [err, setErr] = useState(""),
     [busy, setBusy] = useState(false),
+    [preparingPhotos, setPreparingPhotos] = useState(false),
     [files, setFiles] = useState<File[]>([]),
     [scores, setScores] = useState<Partial<Record<string, number>>>(
       row && kind === "tastings"
@@ -1798,6 +1812,7 @@ export function EntryForm({
   const hasStock = stock(rows, chosenCapsule).amount !== null;
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (busy || preparingPhotos) return;
     setBusy(true);
     setErr("");
     try {
@@ -2114,14 +2129,20 @@ export function EntryForm({
               beschreibt, wie gut er dir gefällt.
             </p>
             {criteria.map(([k, label, left, right]) => (
-              <fieldset className="rating" key={k}>
-                <legend>
-                  {label}{" "}
-                  <strong>
-                    {scores[k] ?? "—"}
-                    <small> / 10</small>
-                  </strong>
-                </legend>
+              <fieldset
+                className="rating"
+                key={k}
+                aria-describedby={`scale-${k}`}
+              >
+                <legend>{label}</legend>
+                <div className="rating-description" id={`scale-${k}`}>
+                  <span>
+                    <b>1:</b> {left}
+                  </span>
+                  <span>
+                    <b>10:</b> {right}
+                  </span>
+                </div>
                 <div className="rating-buttons">
                   {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
                     <button
@@ -2136,10 +2157,11 @@ export function EntryForm({
                     </button>
                   ))}
                 </div>
-                <div className="scale-ends">
-                  <span>{left}</span>
-                  <span>{right}</span>
-                </div>
+                <p className="rating-selection" aria-live="polite">
+                  {scores[k] == null
+                    ? "Noch keine Bewertung"
+                    : `Ausgewählt: ${scores[k]} von 10`}
+                </p>
               </fieldset>
             ))}
             <label>
@@ -2178,10 +2200,30 @@ export function EntryForm({
             type="file"
             accept="image/jpeg,image/png,image/webp"
             multiple
-            onChange={(e) => setFiles(Array.from(e.target.files || []))}
+            disabled={preparingPhotos || busy}
+            onChange={async (e) => {
+              const input = e.currentTarget;
+              const selected = Array.from(input.files || []);
+              if (!selected.length) return;
+              setFiles([]);
+              setPreparingPhotos(true);
+              setErr("");
+              try {
+                setFiles(await materializePhotos(selected));
+              } catch (error) {
+                setErr(message(error));
+              } finally {
+                input.value = "";
+                setPreparingPhotos(false);
+              }
+            }}
           />
         </label>
-        {files.length > 0 && <p>{files.length} Foto(s) ausgewählt</p>}
+        {preparingPhotos ? (
+          <p role="status">Fotos werden vorbereitet …</p>
+        ) : (
+          files.length > 0 && <p>{files.length} Foto(s) ausgewählt</p>
+        )}
         {err && (
           <p role="alert" className="error">
             {err}
@@ -2189,7 +2231,9 @@ export function EntryForm({
         )}
         <Button
           type="submit"
-          disabled={busy || (kind === "tastings" && !capsules.length)}
+          disabled={
+            busy || preparingPhotos || (kind === "tastings" && !capsules.length)
+          }
         >
           <Check size={17} />
           {busy ? "Wird gespeichert …" : "In meinem Tagebuch speichern"}
@@ -2495,6 +2539,7 @@ function Profile({
           </section>
         </>
       )}
+      <AppVersion />
       <section className="panel">
         <h2>Deine Kaffeebar für unterwegs</h2>
         <p>

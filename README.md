@@ -2,6 +2,16 @@
 
 Dein persönliches Kaffeetagebuch als deutschsprachige PWA. React + TypeScript + Vite, Supabase Auth/Postgres/Storage, GitHub Pages.
 
+## Korrektur v3.0.3: Fotos, Skalen und App-Aktualisierung
+
+Ausgewählte Fotos werden sofort aus Kamera/Galerie in unabhängige Dateibytes eingelesen. Bis das abgeschlossen ist, bleibt Speichern gesperrt. Der bestehende binäre Upload und die Wiederherstellung ausstehender Fotos bleiben erhalten. Nach einem Fotoersatz unter derselben Datensatz-ID lädt die Vorschau neu; fehlgeschlagene Anzeigen lassen sich erneut laden.
+
+Jede Bewertungsskala nennt ihre Bedeutung ausdrücklich mit „1: …“ und „10: …“ über den Zahlen. Die Auswahl steht separat darunter als „Ausgewählt: … von 10“. Dadurch bleiben die Endpunkte auch bei zwei Zahlenreihen auf dem Handy eindeutig.
+
+Unter Profil steht die tatsächlich geladene App-Version samt Update-Prüfung. Verfügbare Updates lassen sich über „Jetzt aktualisieren“ aktivieren; geöffnete Erfassungsdialoge müssen zuerst gespeichert oder geschlossen werden. Frühe Update-Meldungen bleiben bis zum Aufbau der Oberfläche erhalten. Beim Zurückkehren in die App und beim Wiederverbinden wird auf Updates geprüft. IndexedDB und ausstehende Uploads werden beim Update nicht gelöscht.
+
+Der mobile Browsercheck prüft den gesamten Fotoablauf von der Dateiauswahl bis zu übertragenen Bytes, bestätigten Metadaten und einer dekodierten Vorschau mit simuliertem Backend. `node scripts/pwa-update-smoke.mjs` prüft nach `npm run build` einen echten Service-Worker-Wechsel einschließlich Neuladen und erhaltener ausstehender Fotobytes. Beide Browserprüfungen laufen in Chromium; ein erneuter Versuch auf dem betroffenen iPhone ist zusätzlich nötig.
+
 ## Funktionen
 
 - Private Sammlung mit Fotos, Marken, Kapselsystemen, Favoriten und Suche

@@ -1,7 +1,15 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+import { readFileSync } from "node:fs";
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(
+      JSON.parse(
+        readFileSync(new URL("./package.json", import.meta.url), "utf8"),
+      ).version,
+    ),
+  },
   base: "/Kapselkompass/",
   plugins: [
     react(),

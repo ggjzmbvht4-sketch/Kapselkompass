@@ -1047,6 +1047,21 @@ footer > span:last-child {
   width: 25px;
   height: 25px;
 }
+.photo > span {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 160px;
+  min-height: 110px;
+  padding: 10px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.photo-retry {
+  min-height: 44px;
+  font-size: 13px;
+  text-decoration: underline;
+}
 .card-visual .photos {
   position: absolute;
   inset: 0;
@@ -1217,19 +1232,27 @@ dialog::backdrop {
   margin: 0;
 }
 .rating legend {
-  display: flex;
-  justify-content: space-between;
+  display: block;
   width: 100%;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  padding: 0;
+}
+.rating-description {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 16px;
   font-size: 12px;
+  color: #76644f;
   margin-bottom: 10px;
+  overflow-wrap: anywhere;
 }
-.rating legend strong {
-  color: #a57a49;
-}
-.rating legend small {
-  font-size: 10px;
-  color: #aaa08f;
-  font-weight: 400;
+.rating-selection {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #76644f;
 }
 .rating-buttons {
   display: grid;
@@ -1248,13 +1271,6 @@ dialog::backdrop {
   background: #947049;
   color: #fff;
   border-color: #947049;
-}
-.scale-ends {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 7px;
-  color: #ab9a84;
-  font-size: 9px;
 }
 .upload {
   border: 1px dashed #d6c6b0;
