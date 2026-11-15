@@ -37,6 +37,7 @@ import {
   type Photo,
 } from "./domain";
 import * as store from "./store";
+import { materializePhotos } from "./photoFiles";
 import DiscoveryPanel from "./DiscoveryPanel";
 import InventoryPanel from "./InventoryPanel";
 import HouseholdPanel from "./HouseholdPanel";
@@ -762,6 +763,34 @@ export default function App() {
             </div>
           )}
           {errors
+            .filter((r) => r.kind === "photos" && r.baseVersion === 0)
+            .map((r) => (
+              <div className="notice photo-recovery" key={"replace-" + r.id}>
+                <span>
+                  Foto noch nicht übertragen. Der Tagebucheintrag bleibt
+                  erhalten.
+                </span>
+                <label className="button secondary file-button">
+                  Foto erneut auswählen
+                  <input
+                    aria-label="Fehlgeschlagenes Foto ersetzen"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      try {
+                        await store.replacePendingPhoto(r, file);
+                        void synchronize();
+                      } catch (err) {
+                        setNotice(message(err));
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+            ))}
+          {errors
             .filter((r) => r.kind === "inventory" && r.baseVersion === 0)
             .map((r) => (
               <div className="notice" key={"discard-" + r.id}>
@@ -1449,6 +1478,7 @@ export default function App() {
                     );
                 }
               }
+              const preparedPhotos = await materializePhotos(files);
               const row = await store.save(
                 uid,
                 modal.kind,
@@ -1457,7 +1487,7 @@ export default function App() {
                 undefined,
                 scope,
               );
-              await store.addPhotos(uid, row.id, files, scope);
+              await store.addPhotos(uid, row.id, preparedPhotos, scope);
               setModal(null);
               setNotice(
                 demo

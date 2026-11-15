@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const remote = vi.hoisted(() => new Map<string, any>());
 const controls = vi.hoisted(() => ({
   fail: false,
+  uploads: [] as { body: unknown; type: string }[],
   onSave: null as null | (() => Promise<void>),
   households: [] as {
     id: string;
@@ -16,7 +17,14 @@ vi.mock("./backend", () => {
   const supabase = {
     storage: {
       from: () => ({
-        upload: async () => ({ error: null }),
+        upload: async (
+          _path: string,
+          body: unknown,
+          options: { contentType: string },
+        ) => {
+          controls.uploads.push({ body, type: options.contentType });
+          return { error: null };
+        },
         remove: async () => ({ error: null }),
       }),
     },
@@ -104,6 +112,7 @@ beforeEach(async () => {
     configurable: true,
   });
   controls.fail = false;
+  controls.uploads = [];
   controls.onSave = null;
   controls.households = [];
   remote.clear();
@@ -254,5 +263,50 @@ describe.sequential("Offline-Warteschlange", () => {
     });
     await store.sync("test");
     expect(await store.list("test")).toHaveLength(0);
+  });
+  it("uploads queued photos as nonempty binary data instead of multipart Blob bodies", async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const row = await store.save(
+      "test",
+      "photos",
+      { parent_id: "c", path: "test/photo", caption: "Foto" },
+      undefined,
+      new Blob([bytes], { type: "image/jpeg" }),
+    );
+    await store.sync("test");
+    expect(controls.uploads).toHaveLength(1);
+    expect(controls.uploads[0].body).toBeInstanceOf(Uint8Array);
+    expect([...(controls.uploads[0].body as Uint8Array)]).toEqual([...bytes]);
+    expect(controls.uploads[0].type).toBe("image/jpeg");
+    expect(
+      (await store.list("test")).find((r) => r.id === row.id)?.dirty,
+    ).toBeFalsy();
+  });
+  it("keeps an unreadable queued photo local and lets a replacement retry under the same record ID", async () => {
+    const row = await store.save(
+      "test",
+      "photos",
+      { parent_id: "c", path: "test/photo", caption: "Alt" },
+      undefined,
+      new Blob([], { type: "image/jpeg" }),
+    );
+    await store.sync("test");
+    const pending = (await store.list("test"))[0];
+    expect(pending.dirty).toBe(true);
+    expect(pending.error).toContain("erneut auswählen");
+    expect(controls.uploads).toHaveLength(0);
+    expect(remote.has(row.id)).toBe(false);
+    await store.replacePendingPhoto(
+      pending,
+      new File([new Uint8Array([1, 2, 3])], "Neu.jpg", { type: "image/jpeg" }),
+    );
+    await store.sync("test");
+    const saved = (await store.list("test"))[0];
+    expect(saved.id).toBe(row.id);
+    expect(saved.dirty).toBeFalsy();
+    expect(saved.data).toMatchObject({
+      caption: "Neu.jpg",
+      path: "test/photo",
+    });
   });
 });

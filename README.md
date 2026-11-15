@@ -133,3 +133,20 @@ Bestehende v2-Projekte wenden `supabase/households.sql` einmalig an; frische Pro
 RLS trennt persönliche Bereiche, Haushalte und gewöhnliche Profilfreigaben. Mitgliedschaftsverwaltung und Übernahme laufen über autorisierte RPCs mit eng begrenzten internen Funktionen; privilegierte Funktionen befinden sich ausschließlich in `coffee_private`. Fotos nach einer Übernahme können in beiden Bereichen auf dieselben hochgeladenen Bytes verweisen. Deren Löschung wird am Server erst erlaubt, wenn kein aktiver Fotodatensatz mehr auf die Datei zeigt, auch wenn eine solche Referenz für den Uploader nach einem Austritt nicht mehr sichtbar ist.
 
 Die Tests prüfen mehrere Nutzer und Haushalte, bestätigte Einladungen, fremde Autorenrechte, persönliche Favoriten, identische Barcodes in verschiedenen Bereichen, gemeinsam gebuchten Verbrauch, Widerruf von Daten- und Fotozugriffen, Verwaltungstransfer, atomare und wiederholbare Übernahmen, die Migration des vorhandenen Offline-Caches sowie gleich gewichtete Haushaltsnoten. Ein manueller Test mit echten Konten auf iPhone/Android steht zusätzlich zur automatisierten Abnahme an.
+
+
+## Korrektur v3.0.1: mobile Tagebucheinträge und iPhone-Fotoupload
+
+Lange Notizen, Links, Sortennamen und Tags umbrechen innerhalb ihrer Karten. Formulare verwenden auf schmalen Geräten eine Spalte und die Bewertungsskalen fünf Schaltflächen je Zeile. Horizontales Scrollen ist nur innerhalb der Vergleichstabelle beziehungsweise Fotoleiste vorgesehen. Browserprüfungen decken 320, 375, 390, 430 und 768 Pixel ab.
+
+Safari kann beim Hochladen eines aus IndexedDB wiederhergestellten Fotos einen leeren Multipart-Request senden. Neue Fotos werden vor dem Speichern als konkrete Dateibytes eingelesen. Auch bereits vorgemerkte Fotos werden vor dem Upload eingelesen und als binärer Request mit explizitem Bildtyp übertragen; der Storage-Client erzeugt dafür kein FormData. Leere oder nicht mehr lesbare Dateien werden vor dem Netzwerkaufruf abgefangen und bleiben als ausstehender Eintrag erhalten. **Foto erneut auswählen** ersetzt ausschließlich die vorgemerkte Bilddatei unter derselben Datensatz-ID und demselben Speicherpfad. Tagebucheinträge und andere lokale Daten werden dabei nicht gelöscht.
+
+Der zusätzliche Browsercheck verwendet einen lokalen Testserver und vollständig simulierte Backend-Antworten; es werden keine echten Konten, Bewertungen oder Bilder geschrieben:
+
+```sh
+npm run dev -- --mode production --host 127.0.0.1 --port 5173
+# In einem weiteren Terminal, mit lokal installiertem Chromium:
+npm run test:mobile
+```
+
+Über `CHROMIUM_PATH` lässt sich der Browserpfad ändern, über `APP_URL` die Serveradresse. Der Check prüft private und gemeinsame Tagebucheinträge, das Bewertungsformular und die Haushaltsverwaltung sowie den realen SDK-Request eines vorgemerkten PNG-Fotos. Die automatische Browserprüfung verwendet Chromium; ein erneuter Upload auf dem betroffenen iPhone bestätigt zusätzlich das Verhalten im echten Safari.

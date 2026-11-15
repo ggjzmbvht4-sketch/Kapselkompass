@@ -1,5 +1,6 @@
 import { openDB } from "idb";
 import { supabase, sessionClient } from "./backend";
+import { photoBytes, materializePhotos } from "./photoFiles";
 import { emptyHouseholds, type HouseholdState } from "./households";
 import type { Kind, LocalRow, RecordData, Row } from "./domain";
 const STORE = "records_scoped";
@@ -235,10 +236,23 @@ async function perform(user: string) {
       if (!valid()) return;
       if (row.household_id && !allowed.has(row.household_id)) continue;
       try {
+        if (
+          kind === "photos" &&
+          !row.deleted &&
+          row.baseVersion === 0 &&
+          !row.blob
+        )
+          throw Error(
+            "Die lokale Bilddatei fehlt. Bitte das Foto erneut auswählen. Deine Einträge bleiben erhalten.",
+          );
         if (kind === "photos" && row.blob && !row.deleted) {
+          // WebKit can submit an empty multipart body for Files restored from IndexedDB.
+          // Materialize and send raw bytes so the SDK does not create FormData.
+          const bytes = await photoBytes(row.blob);
+          if (!valid()) return;
           const { error } = await client.storage
             .from("coffee-photos")
-            .upload((row.data as { path: string }).path, row.blob, {
+            .upload((row.data as { path: string }).path, bytes, {
               upsert: true,
               contentType: row.blob.type,
             });
@@ -398,7 +412,8 @@ export async function addPhotos(
   files: File[],
   household: string | null = null,
 ) {
-  for (const file of files) {
+  const prepared = await materializePhotos(files);
+  for (const file of prepared) {
     if (!["image/jpeg", "image/png", "image/webp"].includes(file.type))
       throw Error("Bitte JPEG, PNG oder WebP verwenden.");
     if (file.size > 10 * 1024 * 1024)
@@ -441,5 +456,29 @@ export async function discardPending(row: LocalRow) {
       "Nur nicht bestätigte Bestandsbuchungen können verworfen werden.",
     );
   await (await db).delete(STORE, key(row.cache_user || row.user_id, row.id));
+  changed();
+}
+
+export async function replacePendingPhoto(row: LocalRow, file: File) {
+  if (row.kind !== "photos" || !row.dirty || row.baseVersion !== 0)
+    throw Error("Nur noch nicht bestätigte Fotos können hier ersetzt werden.");
+  const [prepared] = await materializePhotos([file]);
+  const user = row.cache_user || row.user_id;
+  await (
+    await db
+  ).put(
+    STORE,
+    cached(
+      {
+        ...row,
+        blob: prepared,
+        data: { ...row.data, caption: file.name },
+        dirty: true,
+        error: undefined,
+        updated_at: new Date().toISOString(),
+      },
+      user,
+    ),
+  );
   changed();
 }
