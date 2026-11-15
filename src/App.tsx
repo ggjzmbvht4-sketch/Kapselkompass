@@ -23,6 +23,7 @@ import {
   Pencil,
   Share2,
   BarChart3,
+  Users,
 } from "lucide-react";
 import { supabase, configured, redirectUrl } from "./backend";
 import {
@@ -38,6 +39,15 @@ import {
 import * as store from "./store";
 import DiscoveryPanel from "./DiscoveryPanel";
 import InventoryPanel from "./InventoryPanel";
+import HouseholdPanel from "./HouseholdPanel";
+import HouseholdRatings from "./HouseholdRatings";
+import {
+  emptyHouseholds,
+  householdSummary,
+  personAverage,
+  type HouseholdState,
+} from "./households";
+import type { Preference } from "./domain";
 import { stock, normalizeBarcode, type Inventory } from "./domain";
 import { ownBarcode, type Suggestion } from "./discovery";
 const DEMO = "demo-local";
@@ -162,7 +172,7 @@ function PhotoView({
       ) : (
         <span>{err || "Foto lädt …"}</span>
       )}
-      {onDelete && (
+      {onDelete && (!row.household_id || row.user_id === row.cache_user) && (
         <button aria-label="Foto löschen" onClick={() => onDelete(row)}>
           <X size={16} />
         </button>
@@ -174,7 +184,12 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null),
     [ready, setReady] = useState(false),
     [demo, setDemo] = useState(false),
-    [rows, setRows] = useState<LocalRow[]>([]),
+    [cachedRows, setCachedRows] = useState<LocalRow[]>([]),
+    [loadedHouseholds, setHouseholdState] =
+      useState<HouseholdState>(emptyHouseholds),
+    [cacheOwner, setCacheOwner] = useState(""),
+    [scope, setScope] = useState<string | null>(null),
+    [ratingView, setRatingView] = useState<"mine" | "household">("household"),
     [route, setRoute] = useState(location.hash.slice(1) || "/"),
     [modal, setModal] = useState<{
       kind: Kind;
@@ -196,6 +211,61 @@ export default function App() {
     [install, setInstall] = useState<any>(null),
     [update, setUpdate] = useState(false);
   const uid = user?.id || (demo ? DEMO : "");
+  const householdState =
+    cacheOwner === uid ? loadedHouseholds : emptyHouseholds;
+  const ownCachedRows = cachedRows.filter((r) =>
+    r.cache_user ? r.cache_user === uid : r.user_id === uid,
+  );
+  const household = householdState.households.find((h) => h.id === scope);
+  const rows = ownCachedRows.filter((r) =>
+    scope ? r.household_id === scope : !r.household_id,
+  );
+  const householdRatingRows = household
+    ? rows.filter(
+        (r) =>
+          r.kind !== "tastings" ||
+          household.members.some((m) => m.user_id === r.user_id),
+      )
+    : rows;
+  const scoreFor = (
+    id: string,
+    key: (typeof criteria)[number][0] = "overall",
+  ) =>
+    household
+      ? ratingView === "household"
+        ? householdSummary(householdRatingRows, id, key).score
+        : personAverage(rows, id, uid, key)
+      : average(rows, id, key);
+  const chooseScope = (id: string | null) => {
+    setScope(id);
+    setModal(null);
+    setQuery("");
+    setBrand("");
+    setSystem("");
+    setStatus("");
+    setSelected([]);
+    setRatingView("household");
+    location.hash = "/";
+  };
+  async function refreshHouseholds() {
+    if (!uid || demo) return;
+    await store.sync(uid);
+    const [data, state] = await Promise.all([
+      store.list(uid),
+      store.context(uid),
+    ]);
+    setCachedRows(data);
+    setHouseholdState(state);
+    setCacheOwner(uid);
+  }
+  useEffect(() => {
+    if (scope && !householdState.households.some((h) => h.id === scope)) {
+      setScope(null);
+      setModal(null);
+      setSelected([]);
+      location.hash = "/";
+    }
+  }, [householdState]);
   const navigate = (path: string) => {
     location.hash = path;
     setQuery("");
@@ -242,12 +312,20 @@ export default function App() {
   }, []);
   useEffect(() => {
     let active = true;
-    setRows([]);
+    setCachedRows([]);
+    setHouseholdState(emptyHouseholds);
+    setScope(null);
     const load = () => {
       if (uid)
-        store.list(uid).then((r) => {
-          if (active) setRows(r);
-        });
+        Promise.all([store.list(uid), store.context(uid)]).then(
+          ([r, context]) => {
+            if (active) {
+              setCachedRows(r);
+              setHouseholdState(context);
+              setCacheOwner(uid);
+            }
+          },
+        );
     };
     load();
     store.events.addEventListener("change", load);
@@ -277,11 +355,38 @@ export default function App() {
     }
   }, [uid, online, demo]);
   const active = rows.filter((r) => !r.deleted),
-    capsules = active.filter((r) => r.kind === "capsules"),
+    capsules = active
+      .filter((r) => r.kind === "capsules")
+      .map((r) =>
+        household
+          ? ({
+              ...r,
+              data: {
+                ...r.data,
+                favorite: Boolean(
+                  (
+                    active.find(
+                      (p) =>
+                        p.kind === "preferences" &&
+                        p.user_id === uid &&
+                        (p.data as Preference).capsule_id === r.id,
+                    )?.data as Preference | undefined
+                  )?.favorite,
+                ),
+              },
+            } as LocalRow)
+          : r,
+      ),
     tastings = active.filter((r) => r.kind === "tastings"),
-    pending = rows.filter((r) => r.dirty).length,
+    pending = ownCachedRows.filter((r) => r.dirty).length,
     conflicts = rows.filter((r) => r.conflict),
     errors = rows.filter((r) => r.error && !r.conflict);
+  const overviewScores = household
+    ? capsules.map((c) => scoreFor(c.id)).filter((n): n is number => n !== null)
+    : tastings.map((r) => (r.data as Tasting).overall);
+  const overviewScore = overviewScores.length
+    ? overviewScores.reduce((sum, n) => sum + n, 0) / overviewScores.length
+    : null;
   const detailId = route.startsWith("/kaffee/") ? route.split("/")[2] : null,
     detail = capsules.find((r) => r.id === detailId);
   const photos = (id: string) =>
@@ -297,7 +402,7 @@ export default function App() {
   const filtered = capsules
     .filter((r) => {
       const c = asCapsule(r),
-        rated = average(rows, r.id) !== null;
+        rated = scoreFor(r.id) !== null;
       return (
         `${c.brand} ${c.name}`.toLowerCase().includes(query.toLowerCase()) &&
         (!brand || c.brand === brand) &&
@@ -315,7 +420,7 @@ export default function App() {
     })
     .sort((a, b) =>
       sort === "score"
-        ? (average(rows, b.id) || 0) - (average(rows, a.id) || 0)
+        ? (scoreFor(b.id) || 0) - (scoreFor(a.id) || 0)
         : sort === "name"
           ? asCapsule(a).name.localeCompare(asCapsule(b).name)
           : b.updated_at.localeCompare(a.updated_at),
@@ -371,6 +476,12 @@ export default function App() {
     }
   }
   async function removeRecord(row: LocalRow) {
+    if (row.household_id && (row.kind === "capsules" || row.user_id !== uid)) {
+      setNotice(
+        "Haushaltsbewertungen können nur von ihrem Autor geändert werden. Gemeinsame Sorten werden hier nicht gelöscht.",
+      );
+      return;
+    }
     if (
       !confirm(
         "Diesen Eintrag löschen? Zugehörige Verkostungen und Fotos werden ebenfalls gelöscht.",
@@ -381,6 +492,7 @@ export default function App() {
       const children = rows.filter(
         (r) =>
           !r.deleted &&
+          (!row.household_id || r.user_id === uid) &&
           ((r.kind === "tastings" &&
             (r.data as Tasting).capsule_id === row.id) ||
             (r.kind === "photos" && (r.data as Photo).parent_id === row.id)),
@@ -414,7 +526,9 @@ export default function App() {
     }
     setUser(null);
     setDemo(false);
-    setRows([]);
+    setCachedRows([]);
+    setHouseholdState(emptyHouseholds);
+    setScope(null);
     navigate("/");
   }
   const openNew = (kind: Kind, capsule?: string) => {
@@ -428,6 +542,7 @@ export default function App() {
     { path: "/", text: "Übersicht", icon: Compass },
     { path: "/sammlung", text: "Meine Sammlung", icon: Library },
     { path: "/vergleich", text: "Vergleichen", icon: BarChart3 },
+    { path: "/haushalte", text: "Haushalte", icon: Users },
     { path: "/profil", text: "Mein Profil", icon: UserRound },
   ];
   return (
@@ -526,6 +641,54 @@ export default function App() {
           </div>
         </header>
         <div className="content">
+          {uid && !demo && (
+            <div className="household-context">
+              <label>
+                <Users size={18} /> Bereich
+                <select
+                  aria-label="Privaten Bereich oder Haushalt wählen"
+                  value={scope || ""}
+                  onChange={(e) => chooseScope(e.target.value || null)}
+                >
+                  <option value="">Mein privater Bereich</option>
+                  {householdState.households.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <a href="#/haushalte">
+                Haushalte verwalten
+                {householdState.invitations.length
+                  ? ` (${householdState.invitations.length} Einladungen)`
+                  : ""}{" "}
+                <ArrowUpRight size={14} />
+              </a>
+            </div>
+          )}
+          {householdState.warning && (
+            <p className="notice">{householdState.warning}</p>
+          )}
+          {household && (
+            <div className="household-view">
+              <span>Gemeinsamer Vorrat · {household.name}</span>
+              <div className="tabs" role="group" aria-label="Bewertungsansicht">
+                <button
+                  className={ratingView === "household" ? "active" : ""}
+                  onClick={() => setRatingView("household")}
+                >
+                  Haushaltsnoten
+                </button>
+                <button
+                  className={ratingView === "mine" ? "active" : ""}
+                  onClick={() => setRatingView("mine")}
+                >
+                  Meine Noten
+                </button>
+              </div>
+            </div>
+          )}
           {notice && (
             <div role="status" className="notice">
               {notice}
@@ -623,6 +786,18 @@ export default function App() {
             ))}
           {!ready ? (
             <p>Dein Kaffeetagebuch lädt …</p>
+          ) : route === "/haushalte" ? (
+            <HouseholdPanel
+              user={user?.id || ""}
+              state={householdState}
+              rows={ownCachedRows}
+              onRefresh={refreshHouseholds}
+              onSelect={chooseScope}
+              onImported={(house, id) => {
+                chooseScope(house);
+                navigate("/kaffee/" + id);
+              }}
+            />
           ) : route === "/profil" ? (
             <Profile
               user={user}
@@ -674,13 +849,13 @@ export default function App() {
                           <div className="compare-score" key={key}>
                             <span>{label}</span>
                             <strong>
-                              {fmt(average(rows, id, key))}
+                              {fmt(scoreFor(id, key))}
                               <small> / 10</small>
                             </strong>
                             <div className="bar">
                               <i
                                 style={{
-                                  width: `${(average(rows, id, key) || 0) * 10}%`,
+                                  width: `${(scoreFor(id, key) || 0) * 10}%`,
                                 }}
                               />
                             </div>
@@ -728,6 +903,28 @@ export default function App() {
                   <button
                     aria-label="Favorit umschalten"
                     onClick={() => {
+                      if (scope) {
+                        const preference = rows.find(
+                          (r) =>
+                            r.kind === "preferences" &&
+                            r.user_id === uid &&
+                            (r.data as Preference).capsule_id === detail.id,
+                        );
+                        void store
+                          .save(
+                            uid,
+                            "preferences",
+                            {
+                              capsule_id: detail.id,
+                              favorite: !asCapsule(detail).favorite,
+                            },
+                            preference,
+                            undefined,
+                            scope,
+                          )
+                          .then(synchronize);
+                        return;
+                      }
                       void store
                         .save(
                           uid,
@@ -753,12 +950,14 @@ export default function App() {
                   >
                     <Pencil size={19} />
                   </button>
-                  <button
-                    aria-label="Sorte löschen"
-                    onClick={() => void removeRecord(detail)}
-                  >
-                    <Trash2 size={19} />
-                  </button>
+                  {!scope && (
+                    <button
+                      aria-label="Sorte löschen"
+                      onClick={() => void removeRecord(detail)}
+                    >
+                      <Trash2 size={19} />
+                    </button>
+                  )}
                 </div>
               </div>
               <Photos
@@ -795,8 +994,21 @@ export default function App() {
                 key={detail.id}
                 capsule={detail}
                 rows={rows}
+                people={
+                  household
+                    ? [...household.members, ...(household.authors || [])]
+                    : undefined
+                }
+                user={uid}
                 onSave={async (movement) => {
-                  await store.save(uid, "inventory", movement);
+                  await store.save(
+                    uid,
+                    "inventory",
+                    movement,
+                    undefined,
+                    undefined,
+                    scope,
+                  );
                   void synchronize();
                 }}
               />
@@ -805,15 +1017,26 @@ export default function App() {
                   <div key={k}>
                     <span>{l}</span>
                     <strong>
-                      {fmt(average(rows, detail.id, k))}
+                      {fmt(scoreFor(detail.id, k))}
                       <small>/10</small>
                     </strong>
                   </div>
                 ))}
               </div>
+              {household && (
+                <HouseholdRatings
+                  key={detail.id}
+                  rows={rows}
+                  capsule={detail.id}
+                  household={household}
+                  user={uid}
+                />
+              )}
               <div className="section-head">
                 <h2>
-                  Deine Verkostungen{" "}
+                  {household
+                    ? "Verkostungen im Haushalt"
+                    : "Deine Verkostungen"}{" "}
                   <span className="count">{tastingList(detail.id).length}</span>
                 </h2>
                 <Button onClick={() => openNew("tastings", detail.id)}>
@@ -825,6 +1048,19 @@ export default function App() {
                   key={r.id}
                   row={r}
                   photos={photos(r.id)}
+                  author={
+                    household
+                      ? r.user_id === uid
+                        ? "Du"
+                        : household.members.find((p) => p.user_id === r.user_id)
+                            ?.name ||
+                          household.authors?.find(
+                            (p) => p.user_id === r.user_id,
+                          )?.name ||
+                          "Ehemaliges Mitglied"
+                      : undefined
+                  }
+                  readOnly={Boolean(household && r.user_id !== uid)}
                   edit={() => setModal({ kind: "tastings", row: r })}
                   remove={() => void removeRecord(r)}
                 />
@@ -940,16 +1176,15 @@ export default function App() {
                       },
                       {
                         icon: Star,
-                        n: tastings.length
-                          ? fmt(
-                              tastings.reduce(
-                                (s, t) => s + (t.data as Tasting).overall,
-                                0,
-                              ) / tastings.length,
-                            )
-                          : "—",
-                        label: "Deine durchschnittliche Note",
-                        sub: "Auf einer Skala von 1 bis 10",
+                        n: fmt(overviewScore),
+                        label: household
+                          ? ratingView === "household"
+                            ? "Haushaltsnote (Ø Sorten)"
+                            : "Meine Note (Ø Sorten)"
+                          : "Deine durchschnittliche Note",
+                        sub: household
+                          ? "Personen je Sorte gleich gewichtet"
+                          : "Auf einer Skala von 1 bis 10",
                       },
                     ].map((s) => (
                       <section className="stat" key={s.label}>
@@ -966,7 +1201,9 @@ export default function App() {
               ) : (
                 <PageTitle
                   eyebrow="DEINE ENTDECKUNGEN, GUT AUFGEHOBEN"
-                  title="Meine Kaffeesammlung"
+                  title={
+                    household ? "Unsere Kaffeesammlung" : "Meine Kaffeesammlung"
+                  }
                   text="Alle Sorten, alle Eindrücke. Und dein nächster Lieblingskaffee."
                 />
               )}
@@ -1064,8 +1301,20 @@ export default function App() {
                     <CoffeeCard
                       key={r.id}
                       row={r}
+                      householdInfo={
+                        household
+                          ? {
+                              mine: personAverage(rows, r.id, uid),
+                              people: householdSummary(
+                                householdRatingRows,
+                                r.id,
+                              ).people.length,
+                              mode: ratingView,
+                            }
+                          : undefined
+                      }
                       inventory={stock(rows, r.id)}
-                      score={average(rows, r.id)}
+                      score={scoreFor(r.id)}
                       count={tastingList(r.id).length}
                       photos={photos(r.id)}
                       index={i}
@@ -1180,6 +1429,8 @@ export default function App() {
                     ],
                   },
                   existing,
+                  undefined,
+                  scope,
                 );
                 void synchronize();
               }
@@ -1198,8 +1449,15 @@ export default function App() {
                     );
                 }
               }
-              const row = await store.save(uid, modal.kind, data, modal.row);
-              await store.addPhotos(uid, row.id, files);
+              const row = await store.save(
+                uid,
+                modal.kind,
+                data,
+                modal.row,
+                undefined,
+                scope,
+              );
+              await store.addPhotos(uid, row.id, files, scope);
               setModal(null);
               setNotice(
                 demo
@@ -1285,6 +1543,7 @@ function Empty({
 function CoffeeCard({
   row,
   inventory,
+  householdInfo,
   score,
   count,
   photos,
@@ -1293,6 +1552,11 @@ function CoffeeCard({
 }: {
   row: LocalRow;
   inventory?: ReturnType<typeof stock>;
+  householdInfo?: {
+    mine: number | null;
+    people: number;
+    mode: "mine" | "household";
+  };
   score: number | null;
   count: number;
   photos: LocalRow[];
@@ -1336,6 +1600,17 @@ function CoffeeCard({
             </span>
           )}
         </div>
+        {householdInfo && (
+          <p className="card-stock">
+            {householdInfo.mode === "household"
+              ? "Haushaltsnote · gleich gewichtet"
+              : "Meine Note"}{" "}
+            · {householdInfo.people}{" "}
+            {householdInfo.people === 1 ? "Person" : "Personen"}
+            <br />
+            Meine Note: {fmt(householdInfo.mine)} / 10
+          </p>
+        )}
         {inventory && (
           <p
             className={
@@ -1376,9 +1651,13 @@ function TastingCard({
   edit,
   remove,
   shared = false,
+  readOnly = false,
+  author,
 }: {
   row: LocalRow;
   photos: LocalRow[];
+  readOnly?: boolean;
+  author?: string;
   edit?: () => void;
   remove?: () => void;
   shared?: boolean;
@@ -1394,6 +1673,7 @@ function TastingCard({
               timeStyle: "short",
             })}
           </p>
+          {author && <p className="tasting-author">{author}</p>}
           <h3>
             {t.method}
             {t.water ? ` · ${t.water} ml` : ""}
@@ -1428,7 +1708,7 @@ function TastingCard({
         <p className="muted">Bestandsverbrauch: {t.consumed} Kapsel(n)</p>
       )}
       <Photos rows={photos} shared={shared} />
-      {!shared && (
+      {!shared && !readOnly && (
         <div className="tasting-actions">
           <span>{row.dirty ? "Nur lokal" : "Gespeichert"}</span>
           <button onClick={edit}>
@@ -2112,9 +2392,10 @@ function Profile({
               <Share2 size={20} /> Gezielte Freigaben
             </h2>
             <p className="muted">
-              Eingeladene Personen sehen deine gesamte Sammlung inklusive Fotos
-              und Bewertungen, können sie aber nicht bearbeiten. Sie benötigen
-              bereits ein bestätigtes Konto.
+              Eingeladene Personen sehen deine private Sammlung inklusive Fotos
+              und Bewertungen, können sie aber nicht bearbeiten. Haushaltsdaten
+              sind davon ausgenommen. Sie benötigen bereits ein bestätigtes
+              Konto.
             </p>
             {demo ? (
               <p>Freigaben sind mit einem angemeldeten Konto verfügbar.</p>

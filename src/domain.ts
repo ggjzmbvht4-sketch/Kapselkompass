@@ -45,17 +45,26 @@ export type Inventory = {
   tasting_id?: string;
   tasting_version?: number;
 };
-export type Kind = "capsules" | "tastings" | "photos" | "inventory";
-export type RecordData = Capsule | Tasting | Photo | Inventory;
+export type Preference = { capsule_id: string; favorite: boolean };
+export type Kind =
+  | "capsules"
+  | "tastings"
+  | "photos"
+  | "inventory"
+  | "preferences";
+export type RecordData = Capsule | Tasting | Photo | Inventory | Preference;
 export type Row = {
   id: string;
   user_id: string;
+  household_id?: string | null;
   data: RecordData;
   version: number;
   deleted: boolean;
   updated_at: string;
 };
 export type LocalRow = Row & {
+  cache_user?: string;
+  cache_key?: string;
   kind: Kind;
   dirty?: boolean;
   baseVersion: number;

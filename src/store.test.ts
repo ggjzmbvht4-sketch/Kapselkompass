@@ -4,9 +4,16 @@ const remote = vi.hoisted(() => new Map<string, any>());
 const controls = vi.hoisted(() => ({
   fail: false,
   onSave: null as null | (() => Promise<void>),
+  households: [] as {
+    id: string;
+    name: string;
+    owner_id: string;
+    members: never[];
+    invitations: never[];
+  }[],
 }));
-vi.mock("./backend", () => ({
-  supabase: {
+vi.mock("./backend", () => {
+  const supabase = {
     storage: {
       from: () => ({
         upload: async () => ({ error: null }),
@@ -14,6 +21,13 @@ vi.mock("./backend", () => ({
       }),
     },
     rpc: async (_name: string, p: any) => {
+      if (_name === "coffee_household_state")
+        return {
+          data: { households: controls.households, invitations: [] },
+          error: null,
+        };
+      if (_name === "coffee_can_delete_photo")
+        return { data: true, error: null };
       if (controls.onSave) {
         const f = controls.onSave;
         controls.onSave = null;
@@ -27,6 +41,7 @@ vi.mock("./backend", () => ({
       const data = {
         id: p.p_id,
         user_id: "test",
+        household_id: p.p_household,
         version: (old?.version || 0) + 1,
         deleted: p.p_deleted,
         data: p.p_data,
@@ -37,6 +52,15 @@ vi.mock("./backend", () => ({
     },
     from: (table: string) => ({
       select: () => ({
+        order: () => ({
+          range: async (start: number, end: number) => ({
+            data: [...remote.values()]
+              .filter((r) => r.kind === table.replace("coffee_", ""))
+              .sort((a, b) => a.id.localeCompare(b.id))
+              .slice(start, end + 1),
+            error: null,
+          }),
+        }),
         eq: (_field: string, value: string) => ({
           then: (f: any) =>
             Promise.resolve({
@@ -64,8 +88,9 @@ vi.mock("./backend", () => ({
         }),
       }),
     }),
-  },
-}));
+  };
+  return { supabase, sessionClient: async () => supabase };
+});
 import * as store from "./store";
 const capsule = {
   name: "Offline",
@@ -80,6 +105,7 @@ beforeEach(async () => {
   });
   controls.fail = false;
   controls.onSave = null;
+  controls.households = [];
   remote.clear();
   await store.clear("test");
   await store.clear("other");
@@ -152,6 +178,80 @@ describe.sequential("Offline-Warteschlange", () => {
     controls.onSave = async () => {
       await store.clear("test");
     };
+    await store.sync("test");
+    expect(await store.list("test")).toHaveLength(0);
+  });
+  it("isolates two account caches for the same household record", async () => {
+    controls.households = [
+      {
+        id: "house",
+        name: "Test",
+        owner_id: "test",
+        members: [],
+        invitations: [],
+      },
+    ];
+    const shared = await store.save(
+      "test",
+      "capsules",
+      capsule,
+      undefined,
+      undefined,
+      "house",
+    );
+    await store.sync("test");
+    await store.sync("other");
+    expect((await store.list("other")).some((r) => r.id === shared.id)).toBe(
+      true,
+    );
+    await store.clear("other");
+    expect((await store.list("test")).some((r) => r.id === shared.id)).toBe(
+      true,
+    );
+  });
+  it("purges revoked household data and queued edits before attempting uploads", async () => {
+    controls.households = [
+      {
+        id: "house",
+        name: "Test",
+        owner_id: "test",
+        members: [],
+        invitations: [],
+      },
+    ];
+    const row = await store.save(
+      "test",
+      "capsules",
+      capsule,
+      undefined,
+      undefined,
+      "house",
+    );
+    await store.sync("test");
+    const current = (await store.list("test"))[0];
+    await store.save(
+      "test",
+      "capsules",
+      { ...capsule, name: "Nicht übertragen" },
+      current,
+    );
+    controls.households = [];
+    await store.sync("test");
+    expect(await store.list("test")).toHaveLength(0);
+    expect(remote.get(row.id).data.name).toBe("Offline");
+    expect((await store.context("test")).warning).toContain("beendet");
+  });
+  it("does not cache private profile shares belonging to someone else", async () => {
+    remote.set("private-shared", {
+      id: "private-shared",
+      user_id: "other",
+      kind: "capsules",
+      household_id: null,
+      data: capsule,
+      version: 1,
+      deleted: false,
+      updated_at: "",
+    });
     await store.sync("test");
     expect(await store.list("test")).toHaveLength(0);
   });

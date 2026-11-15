@@ -5,10 +5,14 @@ export default function InventoryPanel({
   rows,
   capsule,
   onSave,
+  people,
+  user,
 }: {
   rows: LocalRow[];
   capsule: LocalRow;
   onSave: (movement: Inventory) => Promise<void>;
+  people?: { user_id: string; name: string }[];
+  user?: string;
 }) {
   const value = stock(rows, capsule.id),
     [open, setOpen] = useState(false),
@@ -65,7 +69,9 @@ export default function InventoryPanel({
             <Package size={20} /> Mein Kapselbestand
           </h2>
           <p className="muted">
-            Privat · Bestandsbewegungen werden nicht mit deinem Profil geteilt.
+            {capsule.household_id
+              ? "Gemeinsamer Vorrat · Alle Haushaltsmitglieder sehen diese Buchungen."
+              : "Privat · Bestandsbewegungen werden nicht mit deinem Profil geteilt."}
           </p>
         </div>
         <button className="button secondary" onClick={() => setOpen(!open)}>
@@ -217,6 +223,9 @@ export default function InventoryPanel({
                             ? m.note
                             : "Korrektur"}
                   <small>
+                    {people
+                      ? `${r.user_id === user ? "Du" : people.find((p) => p.user_id === r.user_id)?.name || "Ehemaliges Mitglied"} · `
+                      : ""}
                     {new Date(r.updated_at).toLocaleString("de-DE")}
                     {r.dirty ? " · nur lokal" : ""}
                     {m.note && m.type !== "tasting" ? ` · ${m.note}` : ""}

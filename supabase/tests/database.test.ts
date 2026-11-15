@@ -55,6 +55,7 @@ beforeAll(async () => {
   );
   await db.exec(readFileSync("supabase/schema.sql", "utf8"));
   await db.exec(readFileSync("supabase/extension.sql", "utf8"));
+  await db.exec(readFileSync("supabase/households.sql", "utf8"));
   await db.query(
     "insert into auth.users values($1,'a@test.invalid',now()),($2,'b@test.invalid',now()),($3,'c@test.invalid',now())",
     [a, b, c],
@@ -300,5 +301,438 @@ describe.sequential("Postgres RLS, Freigaben und Offline-CAS", () => {
     await expect(
       db.query("select coffee_invite('a@test.invalid')"),
     ).rejects.toThrow();
+  });
+});
+
+let home: string,
+  secondHome: string,
+  houseCapsule: string,
+  reviewA: string,
+  reviewB: string;
+const id = () => crypto.randomUUID();
+async function action(action: string, args: Record<string, unknown> = {}) {
+  const names = ["p_action", ...Object.keys(args)],
+    values = [action, ...Object.values(args)];
+  const sql =
+    "select coffee_household_action(" +
+    names.map((n, i) => n + " => $" + (i + 1)).join(",") +
+    ") value";
+  return (await db.query<{ value: any }>(sql, values)).rows[0].value;
+}
+async function scopedSave(
+  kind: string,
+  recordId: string,
+  data: unknown,
+  household: string | null,
+  version = 0,
+  deleted = false,
+) {
+  return (
+    await db.query<{ value: any }>(
+      "select coffee_save_record($1,$2,$3::jsonb,$4,$5,$6) value",
+      [kind, recordId, JSON.stringify(data), version, deleted, household],
+    )
+  ).rows[0].value;
+}
+async function state() {
+  return (
+    await db.query<{ value: any }>("select coffee_household_state() value")
+  ).rows[0].value;
+}
+async function visible(table: string, recordId: string) {
+  return (
+    await db.query("select id from " + table + " where id=$1", [recordId])
+  ).rows.length;
+}
+async function balance(capsule: string) {
+  return (
+    await db.query<{ value: number }>(
+      "select coalesce(sum((data->>'amount')::int),0)::int value from coffee_inventory where capsule_id=$1",
+      [capsule],
+    )
+  ).rows[0].value;
+}
+describe.sequential("Haushalte, Autorenrechte und sichere Übernahme", () => {
+  it("creates a household and requires invitation acceptance before granting membership", async () => {
+    await as(a);
+    home = (await action("create", { p_name: "Unsere Kaffeebar" })).id;
+    await action("invite", { p_household: home, p_email: "b@test.invalid" });
+    await as(b);
+    expect(await visible("coffee_households", home)).toBe(0);
+    const pending = await state();
+    expect(pending.invitations).toHaveLength(1);
+    await expect(
+      db.query(
+        "insert into coffee_household_members(household_id,user_id) values($1,$2)",
+        [home, b],
+      ),
+    ).rejects.toThrow();
+    await expect(
+      action("rename", { p_household: home, p_name: "Angriff" }),
+    ).rejects.toThrow();
+    await action("accept", { p_invitation: pending.invitations[0].id });
+    expect(await visible("coffee_households", home)).toBe(1);
+    await as(c);
+    secondHome = (await action("create", { p_name: "Anderer Haushalt" })).id;
+    expect(await visible("coffee_households", home)).toBe(0);
+  });
+  it("shares catalog and stock but preserves personal review authorship", async () => {
+    await as(a);
+    houseCapsule = id();
+    await scopedSave(
+      "capsules",
+      houseCapsule,
+      { ...capsule, name: "Haushaltskaffee", barcodes: ["4006381333931"] },
+      home,
+    );
+    await scopedSave(
+      "inventory",
+      id(),
+      {
+        capsule_id: houseCapsule,
+        type: "opening",
+        amount: 20,
+        note: "Gemeinsam",
+      },
+      home,
+    );
+    reviewA = id();
+    await scopedSave(
+      "tastings",
+      reviewA,
+      { ...tasting, capsule_id: houseCapsule, overall: 9, consumed: 1 },
+      home,
+    );
+    await as(b);
+    expect(await visible("coffee_capsules", houseCapsule)).toBe(1);
+    expect(await balance(houseCapsule)).toBe(19);
+    reviewB = id();
+    await scopedSave(
+      "tastings",
+      reviewB,
+      { ...tasting, capsule_id: houseCapsule, overall: 6, consumed: 2 },
+      home,
+    );
+    expect(await balance(houseCapsule)).toBe(17);
+    await expect(
+      scopedSave(
+        "tastings",
+        reviewA,
+        { ...tasting, capsule_id: houseCapsule, overall: 1, consumed: 0 },
+        home,
+        1,
+      ),
+    ).rejects.toThrow("eigene");
+    await scopedSave(
+      "capsules",
+      houseCapsule,
+      { ...capsule, name: "Gemeinsam bearbeitet", barcodes: ["4006381333931"] },
+      home,
+      1,
+    );
+    const author = (
+      await db.query<{ user_id: string }>(
+        "select user_id from coffee_capsules where id=$1",
+        [houseCapsule],
+      )
+    ).rows[0].user_id;
+    expect(author).toBe(a);
+    await expect(
+      scopedSave(
+        "capsules",
+        houseCapsule,
+        { ...capsule, name: "Archiviert" },
+        home,
+        2,
+        true,
+      ),
+    ).rejects.toThrow();
+    await as(c);
+    expect(await visible("coffee_capsules", houseCapsule)).toBe(0);
+    expect(await balance(houseCapsule)).toBe(0);
+  });
+  it("keeps favourites personal and prevents cross-scope references", async () => {
+    await as(a);
+    const pref = id();
+    await scopedSave(
+      "preferences",
+      pref,
+      { capsule_id: houseCapsule, favorite: true },
+      home,
+    );
+    const privateId = id();
+    await scopedSave(
+      "capsules",
+      privateId,
+      { ...capsule, name: "Privat" },
+      null,
+    );
+    await expect(
+      scopedSave("tastings", id(), { ...tasting, capsule_id: privateId }, home),
+    ).rejects.toThrow("Bereich");
+    await as(b);
+    expect(await visible("coffee_preferences", pref)).toBe(0);
+    await scopedSave(
+      "preferences",
+      id(),
+      { capsule_id: houseCapsule, favorite: false },
+      home,
+    );
+    await expect(
+      scopedSave(
+        "inventory",
+        id(),
+        { capsule_id: houseCapsule, type: "purchase", amount: 10, note: "" },
+        secondHome,
+      ),
+    ).rejects.toThrow();
+  });
+  it("does not extend profile shares to household data or let members edit others photos", async () => {
+    await as(a);
+    await db.query("select coffee_invite($1)", ["c@test.invalid"]);
+    const photo = id();
+    await scopedSave(
+      "photos",
+      photo,
+      {
+        parent_id: houseCapsule,
+        path: a + "/house-photo",
+        caption: "Haushalt",
+      },
+      home,
+    );
+    await db.query(
+      "insert into storage.objects(bucket_id,name) values('coffee-photos',$1)",
+      [a + "/house-photo"],
+    );
+    await as(b);
+    expect(await visible("coffee_photos", photo)).toBe(1);
+    expect(
+      (
+        await db.query("select name from storage.objects where name=$1", [
+          a + "/house-photo",
+        ])
+      ).rows,
+    ).toHaveLength(1);
+    await expect(
+      scopedSave(
+        "photos",
+        photo,
+        {
+          parent_id: houseCapsule,
+          path: a + "/house-photo",
+          caption: "Andere Person",
+        },
+        home,
+        1,
+      ),
+    ).rejects.toThrow();
+    await expect(
+      scopedSave(
+        "photos",
+        id(),
+        {
+          parent_id: reviewA,
+          path: b + "/wrong-parent",
+          caption: "Fremde Bewertung",
+        },
+        home,
+      ),
+    ).rejects.toThrow();
+    await as(c);
+    expect(await visible("coffee_capsules", houseCapsule)).toBe(0);
+    expect(await visible("coffee_photos", photo)).toBe(0);
+    const shared = (
+      await db.query<{ value: any }>(
+        "select coffee_shared_tastings($1) value",
+        [a],
+      )
+    ).rows;
+    expect(shared.some((r) => r.value.id === reviewA)).toBe(false);
+    expect(
+      (
+        await db.query("select name from storage.objects where name=$1", [
+          a + "/house-photo",
+        ])
+      ).rows,
+    ).toHaveLength(0);
+  });
+  it("rejects duplicate barcodes across different household authors", async () => {
+    await as(b);
+    await expect(
+      scopedSave(
+        "capsules",
+        id(),
+        { ...capsule, barcodes: ["4006381333931"] },
+        home,
+      ),
+    ).rejects.toThrow("Barcode");
+    await as(c);
+    await scopedSave(
+      "capsules",
+      id(),
+      { ...capsule, barcodes: ["4006381333931"] },
+      secondHome,
+    );
+  });
+  it("revokes all household access on removal while preserving attributed history", async () => {
+    await as(a);
+    await action("remove", { p_household: home, p_user: b });
+    await as(b);
+    expect(await visible("coffee_capsules", houseCapsule)).toBe(0);
+    expect(await visible("coffee_tastings", reviewB)).toBe(0);
+    expect(await balance(houseCapsule)).toBe(0);
+    await expect(
+      scopedSave(
+        "tastings",
+        reviewB,
+        { ...tasting, capsule_id: houseCapsule, consumed: 0 },
+        home,
+        1,
+      ),
+    ).rejects.toThrow("Zugriff");
+    await as(a);
+    expect(await visible("coffee_tastings", reviewB)).toBe(1);
+    expect(
+      (await state()).households
+        .find((h: any) => h.id === home)
+        .authors.some((p: any) => p.user_id === b),
+    ).toBe(true);
+  });
+  it("requires a successor before the owner can leave and transfers administration explicitly", async () => {
+    await as(a);
+    await expect(action("leave", { p_household: home })).rejects.toThrow(
+      "übertragen",
+    );
+    await action("invite", { p_household: home, p_email: "b@test.invalid" });
+    await as(b);
+    await action("accept", { p_invitation: (await state()).invitations[0].id });
+    await expect(
+      action("remove", { p_household: home, p_user: a }),
+    ).rejects.toThrow("Haushaltsverwaltung");
+    await as(a);
+    await action("transfer_owner", { p_household: home, p_user: b });
+    await action("leave", { p_household: home });
+    expect(await visible("coffee_households", home)).toBe(0);
+    await as(b);
+    await action("rename", {
+      p_household: home,
+      p_name: "Gemeinsames Zuhause",
+    });
+    expect((await state()).households[0].owner_id).toBe(b);
+  });
+  it("imports private reviews and transfers stock exactly once without double consumption", async () => {
+    await as(c);
+    const source = id(),
+      sourceReview = id(),
+      sourcePhoto = id();
+    await scopedSave(
+      "capsules",
+      source,
+      { ...capsule, name: "Importiert", favorite: true },
+      null,
+    );
+    await scopedSave(
+      "inventory",
+      id(),
+      { capsule_id: source, type: "opening", amount: 12, note: "" },
+      null,
+    );
+    await scopedSave(
+      "tastings",
+      sourceReview,
+      { ...tasting, capsule_id: source, consumed: 2 },
+      null,
+    );
+    await scopedSave(
+      "photos",
+      sourcePhoto,
+      {
+        parent_id: source,
+        path: c + "/import-photo",
+        caption: "Privat und Haushalt",
+      },
+      null,
+    );
+    const operation = id();
+    const run = async () =>
+      (
+        await db.query<{ value: any }>(
+          "select coffee_import_household($1,$2,$3,null,1,true) value",
+          [operation, source, secondHome],
+        )
+      ).rows[0].value;
+    const result = await run();
+    expect(result.transferred).toBe(10);
+    expect(await balance(source)).toBe(0);
+    expect(await balance(result.capsule_id)).toBe(10);
+    expect(
+      (
+        await db.query<{ data: any }>(
+          "select data from coffee_tastings where household_id=$1 and capsule_id=$2",
+          [secondHome, result.capsule_id],
+        )
+      ).rows[0].data.consumed,
+    ).toBe(0);
+    expect(
+      (
+        await db.query("select id from coffee_tastings where id=$1", [
+          sourceReview,
+        ])
+      ).rows,
+    ).toHaveLength(1);
+    expect(await run()).toEqual(result);
+    expect(await balance(result.capsule_id)).toBe(10);
+    await scopedSave(
+      "photos",
+      sourcePhoto,
+      {
+        parent_id: source,
+        path: c + "/import-photo",
+        caption: "Privat und Haushalt",
+      },
+      null,
+      1,
+      true,
+    );
+    expect(
+      (
+        await db.query<{ allowed: boolean }>(
+          "select coffee_can_delete_photo($1) allowed",
+          [c + "/import-photo"],
+        )
+      ).rows[0].allowed,
+    ).toBe(false);
+  });
+  it("rolls back an import entirely when the source stock is negative", async () => {
+    await as(c);
+    const source = id();
+    await scopedSave(
+      "capsules",
+      source,
+      { ...capsule, name: "Negativer Bestand" },
+      null,
+    );
+    await scopedSave(
+      "inventory",
+      id(),
+      { capsule_id: source, type: "opening", amount: 0, note: "" },
+      null,
+    );
+    await scopedSave(
+      "inventory",
+      id(),
+      { capsule_id: source, type: "consume", amount: -1, note: "" },
+      null,
+    );
+    const before = await count("coffee_capsules");
+    await expect(
+      db.query("select coffee_import_household($1,$2,$3,null,1,true)", [
+        id(),
+        source,
+        secondHome,
+      ]),
+    ).rejects.toThrow("negativen");
+    expect(await count("coffee_capsules")).toBe(before);
   });
 });

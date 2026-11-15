@@ -12,8 +12,16 @@ import { EntryForm } from "./App";
 import InventoryPanel from "./InventoryPanel";
 import DiscoveryPanel from "./DiscoveryPanel";
 import { criteria, type LocalRow } from "./domain";
+import HouseholdPanel from "./HouseholdPanel";
+import HouseholdRatings from "./HouseholdRatings";
+import { householdAction, type Household } from "./households";
+vi.mock("./households", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./households")>()),
+  householdAction: vi.fn(async () => ({ id: "house" })),
+}));
 vi.mock("./backend", () => ({
   supabase: null,
+  sessionClient: async () => null,
   configured: false,
   redirectUrl: () => "",
 }));
@@ -192,5 +200,135 @@ describe("Erfassung und Bestand bedienen", () => {
     expect(suggest).toHaveBeenCalledWith(
       expect.objectContaining({ name: "Erkannter Kaffee", pack_size: 50 }),
     );
+  });
+});
+
+const family: Household = {
+  id: "house",
+  name: "Unsere Kaffeebar",
+  owner_id: "a",
+  members: [
+    { user_id: "a", name: "Ada" },
+    { user_id: "b", name: "Bea" },
+  ],
+  authors: [{ user_id: "c", name: "Cora" }],
+  invitations: [],
+};
+describe("Haushalte bedienen und Bewertungen vergleichen", () => {
+  it("creates a household from the explicit form and opens it after refresh", async () => {
+    const refresh = vi.fn().mockResolvedValue(undefined),
+      select = vi.fn();
+    render(
+      <HouseholdPanel
+        user="a"
+        state={{ households: [], invitations: [] }}
+        rows={[]}
+        onRefresh={refresh}
+        onSelect={select}
+        onImported={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Name des neuen Haushalts"), {
+      target: { value: "Unsere Kaffeebar" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Haushalt anlegen" }));
+    await waitFor(() =>
+      expect(householdAction).toHaveBeenCalledWith("create", {
+        p_name: "Unsere Kaffeebar",
+      }),
+    );
+    await waitFor(() => expect(select).toHaveBeenCalledWith("house"));
+    expect(refresh).toHaveBeenCalled();
+  });
+  it("does not accept an invitation until the person explicitly joins", async () => {
+    const select = vi.fn();
+    render(
+      <HouseholdPanel
+        user="b"
+        state={{
+          households: [],
+          invitations: [
+            {
+              id: "invite",
+              household_id: "house",
+              name: "Unsere Kaffeebar",
+              inviter: "Ada",
+            },
+          ],
+        }}
+        rows={[]}
+        onRefresh={vi.fn().mockResolvedValue(undefined)}
+        onSelect={select}
+        onImported={vi.fn()}
+      />,
+    );
+    expect(select).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Beitreten" }));
+    await waitFor(() =>
+      expect(householdAction).toHaveBeenCalledWith("accept", {
+        p_invitation: "invite",
+      }),
+    );
+  });
+  it("exposes management actions only to the household owner", () => {
+    render(
+      <HouseholdPanel
+        user="b"
+        state={{ households: [family], invitations: [] }}
+        rows={[]}
+        onRefresh={vi.fn()}
+        onSelect={vi.fn()}
+        onImported={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Entfernen" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Haushalt verlassen" }),
+    ).toBeTruthy();
+  });
+  it("shows equal-person scores and makes former-member inclusion explicit", () => {
+    const tasting = (user: string, score: number) =>
+      ({
+        ...capsule,
+        id: crypto.randomUUID(),
+        kind: "tastings",
+        user_id: user,
+        household_id: "house",
+        data: {
+          capsule_id: "c",
+          date: "2026-11-15",
+          method: "Espresso",
+          overall: score,
+          aroma: score,
+          intensity: score,
+          acidity: score,
+          bitterness: score,
+          body: score,
+          rebuy: "yes",
+          notes: "",
+          tags: [],
+        },
+      }) as LocalRow;
+    const rows = [
+      ...Array.from({ length: 10 }, () => tasting("a", 8)),
+      tasting("b", 6),
+      tasting("c", 1),
+    ];
+    const { container } = render(
+      <HouseholdRatings rows={rows} capsule="c" household={family} user="a" />,
+    );
+    expect(
+      container.querySelector(".house-rating-summary strong")?.textContent,
+    ).toContain("7");
+    expect(screen.queryByText("Cora (ehemalig)")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "Historische Beiträge ehemaliger Mitglieder einbeziehen",
+      }),
+    );
+    expect(screen.getByText("Cora (ehemalig)")).toBeTruthy();
+    expect(
+      container.querySelector(".house-rating-summary strong")?.textContent,
+    ).toContain("5");
   });
 });
